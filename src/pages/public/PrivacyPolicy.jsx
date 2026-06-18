@@ -28,7 +28,7 @@ export default function PrivacyPolicy() {
       </p>
 
       <h2>Contact</h2>
-      <p>Email: your-email@gmail.com</p>
+      <p>Email: shaik.income@gmail.com</p>
     </div>
   );
 }
