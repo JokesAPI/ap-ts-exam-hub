@@ -38,9 +38,9 @@ export default function App() {
       <Route path="/previous-papers" element={<PreviousPapers />} />
 
       <Route path="/about" element={<About />} />
-<Route path="/contact" element={<Contact />} />
-<Route path="/privacy-policy" element={<PrivacyPolicy />} />
-<Route path="/terms-conditions" element={<TermsConditions />} />
+      <Route path="/contact" element={<Contact />} />
+      <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+      <Route path="/terms-conditions" element={<TermsConditions />} />
 
       {/* Admin */}
       <Route path="/admin/login" element={<AdminLogin />} />
