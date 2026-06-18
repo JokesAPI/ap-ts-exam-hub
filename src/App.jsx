@@ -1,7 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './context/AuthContext'
-
-// Public Pages
 import Home from './pages/public/Home'
 import Notifications from './pages/public/Notifications'
 import Exams from './pages/public/Exams'
@@ -13,9 +11,11 @@ import PrivacyPolicy from './pages/public/PrivacyPolicy'
 import GeniusAI from './pages/public/GeniusAI'
 import DailyQuiz from './pages/public/DailyQuiz'
 import MockTests from './pages/public/MockTests'
+import MockTestEngine from './pages/public/MockTestEngine'
 import JobAlerts from './pages/public/JobAlerts'
-
-// Admin Pages
+import Login from './pages/public/Login'
+import StudentDashboard from './pages/public/StudentDashboard'
+import Subscribe from './pages/public/Subscribe'
 import AdminLogin from './pages/admin/AdminLogin'
 import AdminDashboard from './pages/admin/AdminDashboard'
 import AdminNotifications from './pages/admin/AdminNotifications'
@@ -43,7 +43,11 @@ export default function App() {
       <Route path="/genius-ai" element={<GeniusAI />} />
       <Route path="/daily-quiz" element={<DailyQuiz />} />
       <Route path="/mock-tests" element={<MockTests />} />
+      <Route path="/mock-test/start" element={<MockTestEngine />} />
       <Route path="/job-alerts" element={<JobAlerts />} />
+      <Route path="/login" element={<Login />} />
+      <Route path="/dashboard" element={<StudentDashboard />} />
+      <Route path="/subscribe" element={<Subscribe />} />
       <Route path="/admin/login" element={<AdminLogin />} />
       <Route path="/admin" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
       <Route path="/admin/notifications" element={<ProtectedRoute><AdminNotifications /></ProtectedRoute>} />
