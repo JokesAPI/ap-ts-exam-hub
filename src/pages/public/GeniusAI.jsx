@@ -2,8 +2,9 @@ import { useState, useRef, useEffect } from 'react'
 import { Helmet } from 'react-helmet-async'
 import Layout from '../../components/Layout'
 import { Send, Bot, User, Sparkles, Brain, FileText, Target, Clock, Lock, BookOpen, Mic, BarChart2, Briefcase, MessageSquare, Calendar, TrendingUp, ChevronRight, Globe } from 'lucide-react'
+import { callGroq } from '../../lib/groq'
 
-const FREE_LIMIT = 5
+const FREE_LIMIT = 999 // Free for first month
 const STORAGE_KEY = 'genius_ai_count'
 const RESET_KEY = 'genius_ai_date'
 
@@ -28,60 +29,69 @@ const tabs = [
 ]
 
 function getLangInstruction(lang) {
-  if (lang === 'telugu') return 'IMPORTANT: Reply ONLY in Telugu language (తెలుగు లిపిలో మాత్రమే సమాధానం ఇవ్వండి). Use Telugu script throughout.'
-  if (lang === 'hindi') return 'IMPORTANT: Reply ONLY in Hindi language (हिंदी में उत्तर दें). Use Devanagari script throughout.'
-  return 'Reply in clear English.'
+  if (lang === 'telugu') return 'IMPORTANT: You MUST reply ONLY in Telugu language using Telugu script (తెలుగు లిపి). Do not use English words except for proper nouns and exam terms.'
+  if (lang === 'hindi') return 'IMPORTANT: You MUST reply ONLY in Hindi language using Devanagari script (हिंदी). Do not use English words except for proper nouns and exam terms.'
+  return 'Reply in clear, simple English.'
 }
 
 function getSystemPrompt(tabId, lang) {
   const langInstr = getLangInstruction(lang)
-  const base = `You are Genius AI, a personal exam coach for AP and Telangana state exam aspirants in India. Help with APPSC, TSPSC, AP Police, DSC, TET, RRB, SSC exams. ${langInstr}`
+  const base = `You are Genius AI, a helpful and encouraging personal exam coach for students preparing for AP and Telangana state government exams in India. You specialize in APPSC, TSPSC, AP Police, TS Police, DSC, TET, RRB, SSC exams. Always be positive, clear and exam-focused. ${langInstr}`
 
-  const prompts = {
-    chat: base,
-    mock: `${base} Generate a 10-question MCQ mock test for APPSC Group-2. Format: Q1. [Question] A) B) C) D) Answer: [letter] Explanation: [brief]`,
-    explain: `${base} Explain concepts clearly with examples, analogies, and mnemonics. Make it easy to remember.`,
-    studyplan: `${base} Create detailed, practical study plans with specific daily schedules, subject-wise time allocation.`,
-    doubt: `${base} Explain doubts clearly with examples. Use simple language.`,
-    career: `${base} Give realistic detailed career roadmaps with timelines and actionable steps for government jobs.`,
-    interview: `${base} Generate relevant interview questions with ideal answers and presentation tips.`,
-    english: `${base} Help students improve English communication with practical exercises and interview tips.`,
-    revision: `${base} Create smart revision schedules focusing on high-weightage topics and spaced repetition.`,
-    currentaffairs: `${base} Summarize news in exam-relevant format with key facts students need to remember.`,
-    weakness: `${base} Analyze student weaknesses objectively and provide actionable improvement strategies.`,
+  const extras = {
+    mock: 'Generate exactly 10 MCQ questions. Format each as:\nQ[N]. [Question text]\nA) [option]\nB) [option]\nC) [option]\nD) [option]\nAnswer: [letter]\nExplanation: [one sentence]\n\nMake questions relevant to APPSC Group-2 syllabus.',
+    explain: 'Explain the given concept or question clearly with a simple example. Use analogies that Indian students can relate to. Keep it concise.',
+    studyplan: 'Create a practical, day-wise study plan. Include subject names, topics, hours per day, and weekly revision. Be specific.',
+    doubt: 'Answer the doubt clearly with examples. If it is a factual question, give the correct answer with explanation.',
+    career: 'Give a step-by-step career roadmap with realistic timelines, eligibility criteria, exam stages, and preparation tips.',
+    interview: 'Generate 10 interview questions with model answers. Focus on AP/TS history, current affairs, and general administration.',
+    english: 'Provide English speaking practice exercises with model sentences, common interview phrases, and pronunciation tips.',
+    revision: 'Create a day-wise revision schedule with specific topics, time slots, and practice test recommendations.',
+    currentaffairs: 'Provide 10 important current affairs points relevant to APPSC/TSPSC exams. Include National, AP State, TS State, Economy, Science, Sports, and Awards. Format as numbered list with bold headings.',
+    weakness: 'Identify the top 5 common weak areas for APPSC aspirants. For each, explain why it is difficult and give 3 specific improvement strategies.',
   }
-  return prompts[tabId] || base
+
+  return base + (extras[tabId] ? '\n\n' + extras[tabId] : '')
 }
 
-function getQuickPrompt(tabId, lang) {
+function getQuickPrompt(tabId) {
   const prompts = {
-    mock: 'Generate a 10-question MCQ mock test for APPSC Group-2 General Studies with answers and explanations.',
-    studyplan: 'Create a 90-day study plan for APPSC Group-2 exam with daily schedule and subject-wise time allocation.',
-    career: 'Create a complete career roadmap for becoming an IAS/IPS officer from Andhra Pradesh with timeline and steps.',
-    interview: 'Generate 10 important APPSC Group-2 interview questions with ideal answers.',
-    english: 'Give me 5 English speaking practice exercises for government job interviews with model answers.',
-    revision: 'Create a 7-day revision plan for APPSC covering History, Polity, Economy, Science, Current Affairs.',
-    currentaffairs: 'Summarize the most important current affairs of this week relevant to APPSC and TSPSC exams with key points.',
-    weakness: 'Analyze top 5 weak areas of APPSC aspirants and give specific strategies to improve each one.',
+    mock: 'Generate a 10-question MCQ mock test for APPSC Group-2 General Studies with 4 options, correct answer, and explanation for each question.',
+    studyplan: 'Create a detailed 90-day study plan for APPSC Group-2 exam with daily schedule, subject-wise time allocation, and important topics.',
+    career: 'Create a complete career roadmap for becoming an IAS/IPS officer from Andhra Pradesh with eligibility, timeline, exam stages, and preparation strategy.',
+    interview: 'Generate 10 important APPSC Group-2 interview questions with ideal model answers.',
+    english: 'Give me 5 English speaking exercises for government job interviews with model answers and tips to improve spoken English.',
+    revision: 'Create a 7-day revision plan for APPSC covering History, Polity, AP Economy, General Science, and Current Affairs with specific topics each day.',
+    currentaffairs: 'Give me 10 important current affairs points for this month relevant to APPSC and TSPSC exams. Cover National, AP State, TS State, Economy, Science, Sports, and Awards.',
+    weakness: 'Analyze the top 5 weak subjects where APPSC aspirants struggle most, explain why, and give 3 specific strategies to improve each subject.',
   }
   return prompts[tabId]
 }
 
 function getWelcomeMessage(tabId, lang) {
-  const messages = {
-    chat: { english: 'Hello! 👋 I am Genius AI — your personal APPSC/TSPSC exam coach!\n\nAsk me anything about exams, current affairs, study tips or career guidance.\n\nYou have 5 free messages today!', telugu: 'నమస్కారం! 👋 నేను Genius AI — మీ వ్యక్తిగత పరీక్ష కోచ్!\n\nపరీక్షలు, కరెంట్ అఫైర్స్, చదువు గురించి ఏదైనా అడగండి.\n\nఈ రోజు 5 ఉచిత సందేశాలు ఉన్నాయి!', hindi: 'नमस्ते! 👋 मैं Genius AI हूं — आपका व्यक्तिगत परीक्षा कोच!\n\nपरीक्षा, करंट अफेयर्स, पढ़ाई के बारे में कुछ भी पूछें।\n\nआज 5 मुफ्त संदेश हैं!' },
-    mock: { english: '📝 Mock Test Generator\n\nClick "Generate Mock Test" for instant APPSC/TSPSC practice questions with answers!', telugu: '📝 మాక్ టెస్ట్ జనరేటర్\n\nAPPSC/TSPSC ప్రాక్టీస్ ప్రశ్నల కోసం "మాక్ టెస్ట్ జనరేట్ చేయి" నొక్కండి!', hindi: '📝 मॉक टेस्ट जनरेटर\n\nAPPSC/TSPSC प्रैक्टिस प्रश्नों के लिए "मॉक टेस्ट जनरेट करें" दबाएं!' },
-    explain: { english: '📖 Answer Explainer\n\nPaste any question or topic and I will explain it clearly with examples!', telugu: '📖 సమాధాన వివరణ\n\nఏదైనా ప్రశ్న లేదా అంశాన్ని పేస్ట్ చేయండి, నేను స్పష్టంగా వివరిస్తాను!', hindi: '📖 उत्तर व्याख्याता\n\nकोई भी प्रश्न या विषय पेस्ट करें, मैं उदाहरण सहित स्पष्ट करूंगा!' },
-    studyplan: { english: '📅 Study Plan Creator\n\nTell me your exam and available days — I will create a personalized plan!', telugu: '📅 స్టడీ ప్లాన్ క్రియేటర్\n\nమీ పరీక్ష మరియు అందుబాటులో ఉన్న రోజులు చెప్పండి!', hindi: '📅 स्टडी प्लान क्रिएटर\n\nअपनी परीक्षा और उपलब्ध दिन बताएं — मैं व्यक्तिगत योजना बनाऊंगा!' },
-    doubt: { english: '🤔 Doubt Solver\n\nAsk any subject doubt — History, Polity, Economy, Science. I will explain clearly!', telugu: '🤔 డౌట్ సాల్వర్\n\nచరిత్ర, పాలిటీ, ఎకానమీ, సైన్స్ — ఏ అనుమానమైనా అడగండి!', hindi: '🤔 संदेह समाधानकर्ता\n\nइतिहास, राजनीति, अर्थव्यवस्था, विज्ञान — कोई भी संदेह पूछें!' },
-    career: { english: '🎯 Career Roadmap\n\nTell me your career goal and I will create a complete roadmap!', telugu: '🎯 కెరీర్ రోడ్‌మ్యాప్\n\nమీ కెరీర్ లక్ష్యం చెప్పండి — పూర్తి రోడ్‌మ్యాప్ తయారు చేస్తాను!', hindi: '🎯 करियर रोडमैप\n\nअपना करियर लक्ष्य बताएं — मैं पूरा रोडमैप तैयार करूंगा!' },
-    interview: { english: '💼 Interview Prep\n\nI will generate important interview Q&A for your target exam. Which post?', telugu: '💼 ఇంటర్వ్యూ ప్రిపరేషన్\n\nమీ లక్ష్య పరీక్షకు ముఖ్యమైన ప్రశ్నోత్తరాలు తయారు చేస్తాను!', hindi: '💼 इंटरव्यू तैयारी\n\nआपकी लक्ष्य परीक्षा के लिए महत्वपूर्ण प्रश्नोत्तर तैयार करूंगा!' },
-    english: { english: '🎤 English Speaking Practice\n\nI will help you practice English for government job interviews!', telugu: '🎤 ఇంగ్లీష్ స్పీకింగ్ ప్రాక్టీస్\n\nప్రభుత్వ ఉద్యోగ ఇంటర్వ్యూల కోసం ఇంగ్లీష్ నేర్చుకోండి!', hindi: '🎤 अंग्रेजी बोलने का अभ्यास\n\nसरकारी नौकरी इंटरव्यू के लिए अंग्रेजी का अभ्यास करें!' },
-    revision: { english: '📚 Revision Planner\n\nTell me your exam date and weak subjects — I will create a revision schedule!', telugu: '📚 రివిజన్ ప్లానర్\n\nపరీక్ష తేదీ మరియు బలహీన సబ్జెక్టులు చెప్పండి!', hindi: '📚 रिवीजन प्लानर\n\nपरीक्षा तिथि और कमजोर विषय बताएं — रिवीजन शेड्यूल बनाऊंगा!' },
-    currentaffairs: { english: '📰 Current Affairs Summarizer\n\nClick below to get this week\'s important current affairs for AP & TS exams!', telugu: '📰 కరెంట్ అఫైర్స్ సమ్మరీ\n\nAP & TS పరీక్షలకు ఈ వారం ముఖ్యమైన కరెంట్ అఫైర్స్ పొందండి!', hindi: '📰 करंट अफेयर्स सारांश\n\nAP & TS परीक्षाओं के लिए इस सप्ताह के महत्वपूर्ण करंट अफेयर्स पाएं!' },
-    weakness: { english: '📊 Weakness Analyzer\n\nI will identify your weak areas and suggest improvement strategies!', telugu: '📊 వీక్‌నెస్ అనాలిజర్\n\nమీ బలహీన అంశాలు గుర్తించి మెరుగుదల వ్యూహాలు సూచిస్తాను!', hindi: '📊 कमजोरी विश्लेषक\n\nआपके कमजोर क्षेत्रों की पहचान करके सुधार रणनीतियां सुझाऊंगा!' },
+  const msgs = {
+    chat: {
+      english: '👋 Hello! I am Genius AI — your personal APPSC/TSPSC exam coach!\n\nAsk me anything:\n• Exam notifications\n• Study tips\n• Current affairs\n• Career guidance\n\n🎁 FREE for the first month — all features unlocked!',
+      telugu: '👋 నమస్కారం! నేను Genius AI — మీ వ్యక్తిగత పరీక్ష కోచ్!\n\nఏదైనా అడగండి:\n• పరీక్ష నోటిఫికేషన్లు\n• చదువు చిట్కాలు\n• కరెంట్ అఫైర్స్\n\n🎁 మొదటి నెల పూర్తిగా FREE!',
+      hindi: '👋 नमस्ते! मैं Genius AI हूं — आपका व्यक्तिगत परीक्षा कोच!\n\nकुछ भी पूछें:\n• परीक्षा सूचनाएं\n• पढ़ाई के टिप्स\n• करंट अफेयर्स\n\n🎁 पहले महीने बिल्कुल FREE!',
+    },
+    mock: {
+      english: '📝 Mock Test Generator\n\nClick the button below to get instant 10-question APPSC mock test with answers and explanations!\n\n🎁 FREE for first month!',
+      telugu: '📝 మాక్ టెస్ట్ జనరేటర్\n\nత్వరిత 10-ప్రశ్నల APPSC మాక్ టెస్ట్ కోసం దిగువ బటన్ నొక్కండి!\n\n🎁 మొదటి నెల FREE!',
+      hindi: '📝 मॉक टेस्ट जनरेटर\n\nत्वरित 10-प्रश्न APPSC मॉक टेस्ट के लिए नीचे बटन दबाएं!\n\n🎁 पहले महीने FREE!',
+    },
+    currentaffairs: {
+      english: '📰 Current Affairs Summarizer\n\nClick below to get this month\'s important current affairs for AP & TS exams!\n\nCovers: National • AP State • TS State • Economy • Science • Sports • Awards',
+      telugu: '📰 కరెంట్ అఫైర్స్ సమ్మరీ\n\nAP & TS పరీక్షలకు ఈ నెల ముఖ్యమైన కరెంట్ అఫైర్స్ పొందడానికి దిగువ నొక్కండి!',
+      hindi: '📰 करंट अफेयर्स सारांश\n\nAP & TS परीक्षाओं के लिए इस महीने के महत्वपूर्ण करंट अफेयर्स पाने के लिए नीचे दबाएं!',
+    },
   }
-  return messages[tabId]?.[lang] || messages[tabId]?.english || 'How can I help you?'
+  const defaultMsg = {
+    english: `Ready to help with ${tabs.find(t => t.id === tabId)?.label || ''}!\n\nType your question below or click the button. 🎁 FREE for first month!`,
+    telugu: `${tabs.find(t => t.id === tabId)?.label || ''} కోసం సిద్ధంగా ఉన్నాను!\n\nదిగువ మీ ప్రశ్న టైప్ చేయండి. 🎁 మొదటి నెల FREE!`,
+    hindi: `${tabs.find(t => t.id === tabId)?.label || ''} के लिए तैयार हूं!\n\nनीचे अपना प्रश्न टाइप करें। 🎁 पहले महीने FREE!`,
+  }
+  return (msgs[tabId] || defaultMsg)[lang] || (msgs[tabId] || defaultMsg)['english']
 }
 
 export default function GeniusAI() {
@@ -89,34 +99,22 @@ export default function GeniusAI() {
   const [messages, setMessages] = useState({})
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [msgCount, setMsgCount] = useState(0)
-  const [showPaywall, setShowPaywall] = useState(false)
   const [language, setLanguage] = useState('english')
+  const [error, setError] = useState('')
   const bottomRef = useRef(null)
+  const chatRef = useRef(null)
   const currentTab = tabs.find(t => t.id === activeTab)
 
   useEffect(() => {
-    const today = new Date().toDateString()
-    const savedDate = localStorage.getItem(RESET_KEY)
-    if (savedDate !== today) {
-      localStorage.setItem(RESET_KEY, today)
-      localStorage.setItem(STORAGE_KEY, '0')
-      setMsgCount(0)
-    } else {
-      const count = parseInt(localStorage.getItem(STORAGE_KEY) || '0')
-      setMsgCount(count)
-      if (count >= FREE_LIMIT) setShowPaywall(true)
-    }
-  }, [])
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, activeTab])
-
-  // Reset messages when language changes
-  useEffect(() => {
     setMessages({})
   }, [language])
+
+  useEffect(() => {
+    // Scroll chat area to bottom, not the whole page
+    if (chatRef.current) {
+      chatRef.current.scrollTop = chatRef.current.scrollHeight
+    }
+  }, [messages, activeTab, loading])
 
   const currentMessages = messages[activeTab] || [
     { role: 'assistant', content: getWelcomeMessage(activeTab, language) }
@@ -125,13 +123,8 @@ export default function GeniusAI() {
   async function sendMessage(customPrompt) {
     const userText = customPrompt || input.trim()
     if (!userText) return
-    if (msgCount >= FREE_LIMIT) { setShowPaywall(true); return }
 
-    const newCount = msgCount + 1
-    setMsgCount(newCount)
-    localStorage.setItem(STORAGE_KEY, String(newCount))
-    if (newCount >= FREE_LIMIT) setShowPaywall(true)
-
+    setError('')
     const newUserMsg = { role: 'user', content: userText }
     const updatedMessages = [...currentMessages, newUserMsg]
     setMessages(prev => ({ ...prev, [activeTab]: updatedMessages }))
@@ -139,89 +132,101 @@ export default function GeniusAI() {
     setLoading(true)
 
     try {
-      const GROQ_KEY = import.meta.env.VITE_GROQ_API_KEY
-      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${GROQ_KEY}`
-        },
-        body: JSON.stringify({
-          model: 'llama3-8b-8192',
-          max_tokens: 1024,
-          messages: [
-            { role: 'system', content: getSystemPrompt(activeTab, language) },
-            ...updatedMessages.map(m => ({ role: m.role, content: m.content }))
-          ]
-        })
-      })
-      const data = await response.json()
-      const reply = data.choices?.[0]?.message?.content || 'Sorry, could not process. Please try again.'
+      const systemPrompt = getSystemPrompt(activeTab, language)
+      const reply = await callGroq(systemPrompt, updatedMessages)
       setMessages(prev => ({
         ...prev,
         [activeTab]: [...updatedMessages, { role: 'assistant', content: reply }]
       }))
-    } catch {
+    } catch (err) {
+      console.error('Genius AI error:', err)
+      setError(`Error: ${err.message}. Please check your Groq API key in .env file.`)
       setMessages(prev => ({
         ...prev,
-        [activeTab]: [...updatedMessages, { role: 'assistant', content: 'Error connecting. Please check your internet and try again.' }]
+        [activeTab]: [...updatedMessages, { role: 'assistant', content: `Sorry, I encountered an error: ${err.message}\n\nPlease make sure VITE_GROQ_API_KEY is set correctly in your .env file and Vercel environment variables.` }]
       }))
     }
     setLoading(false)
   }
 
-  const remaining = Math.max(0, FREE_LIMIT - msgCount)
+  function switchTab(tabId) {
+    setActiveTab(tabId)
+    setError('')
+    // Scroll chat to top when switching tabs
+    setTimeout(() => {
+      if (chatRef.current) chatRef.current.scrollTop = 0
+    }, 50)
+  }
 
   return (
     <Layout>
       <Helmet>
         <title>Genius AI - Personal Exam Coach | AP TS Exam Hub</title>
-        <meta name="description" content="AI exam coach for APPSC TSPSC in Telugu, Hindi and English. Mock tests, study plans, doubt solving." />
+        <meta name="description" content="AI exam coach for APPSC TSPSC in Telugu, Hindi and English. Free for first month!" />
       </Helmet>
 
       {/* Hero */}
       <section className="bg-gradient-to-br from-purple-900 via-primary-800 to-primary-600 text-white py-8 px-4">
         <div className="max-w-6xl mx-auto text-center">
           <div className="inline-flex items-center gap-2 bg-white/20 px-4 py-1.5 rounded-full text-sm font-medium mb-3">
-            <Sparkles className="h-4 w-4" /> Powered by Groq AI — Fastest AI in the world
+            <Sparkles className="h-4 w-4" /> Powered by Groq AI — World's Fastest AI
           </div>
           <h1 className="text-3xl font-extrabold mb-1">Genius AI 🧠</h1>
           <p className="text-blue-100 mb-1">Your Personal APPSC / TSPSC Exam Coach</p>
-          <p className="text-sm text-blue-200">Available in English • తెలుగు • हिंदी</p>
+          <div className="inline-flex items-center gap-2 bg-green-500/30 border border-green-400/50 px-4 py-1.5 rounded-full text-sm font-semibold mt-1">
+            🎁 FREE for first month — All features unlocked!
+          </div>
         </div>
       </section>
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
 
-        {/* Language selector + free limit */}
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-          {/* Language buttons */}
+        {/* Language selector */}
+        <div className="flex items-center gap-3 mb-4 flex-wrap">
           <div className="flex items-center gap-2">
             <Globe className="h-4 w-4 text-gray-400" />
-            <div className="flex bg-gray-100 dark:bg-gray-800 rounded-xl p-1 gap-1">
-              {LANGUAGES.map(lang => (
-                <button key={lang.code} onClick={() => setLanguage(lang.code)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${language === lang.code ? 'bg-primary-600 text-white shadow' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'}`}>
-                  {lang.flag} {lang.label}
-                </button>
-              ))}
-            </div>
+            <span className="text-sm text-gray-500 font-medium">Language:</span>
           </div>
+          <div className="flex bg-gray-100 dark:bg-gray-800 rounded-xl p-1 gap-1">
+            {LANGUAGES.map(lang => (
+              <button key={lang.code} onClick={() => setLanguage(lang.code)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${language === lang.code ? 'bg-primary-600 text-white shadow' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'}`}>
+                {lang.flag} {lang.label}
+              </button>
+            ))}
+          </div>
+        </div>
 
-          {/* Free limit */}
-          <div className={`px-3 py-1.5 rounded-xl text-sm font-medium flex items-center gap-1.5 ${remaining > 2 ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : remaining > 0 ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700' : 'bg-red-100 dark:bg-red-900/30 text-red-700'}`}>
-            <Clock className="h-3.5 w-3.5" />
-            {remaining > 0 ? `${remaining} free messages left today` : 'Limit reached — Upgrade!'}
+        {/* Error banner */}
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 text-sm">
+            ⚠️ {error}
+          </div>
+        )}
+
+        {/* Mobile tab strip */}
+        <div className="md:hidden mb-4">
+          <div className="flex gap-2 overflow-x-auto pb-2">
+            {tabs.map(tab => {
+              const Icon = tab.icon
+              return (
+                <button key={tab.id} onClick={() => switchTab(tab.id)}
+                  className={`flex-shrink-0 flex flex-col items-center gap-1 px-3 py-2 rounded-xl text-xs font-medium transition-all ${activeTab === tab.id ? 'bg-primary-600 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}>
+                  <Icon className="h-4 w-4" />
+                  {tab.label.split(' ')[0]}
+                </button>
+              )
+            })}
           </div>
         </div>
 
         <div className="flex gap-5">
-          {/* Sidebar */}
+          {/* Desktop Sidebar */}
           <div className="hidden md:flex flex-col w-48 flex-shrink-0 gap-1">
             {tabs.map(tab => {
               const Icon = tab.icon
               return (
-                <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                <button key={tab.id} onClick={() => switchTab(tab.id)}
                   className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left ${activeTab === tab.id ? 'bg-primary-600 text-white shadow-md' : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300'}`}>
                   <Icon className={`h-4 w-4 flex-shrink-0 ${activeTab === tab.id ? 'text-white' : tab.color}`} />
                   {tab.label}
@@ -230,37 +235,21 @@ export default function GeniusAI() {
             })}
           </div>
 
-          {/* Mobile tabs */}
-          <div className="md:hidden w-full">
-            <div className="flex gap-2 overflow-x-auto pb-2 mb-3">
-              {tabs.map(tab => {
-                const Icon = tab.icon
-                return (
-                  <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                    className={`flex-shrink-0 flex flex-col items-center gap-1 px-3 py-2 rounded-xl text-xs font-medium transition-all ${activeTab === tab.id ? 'bg-primary-600 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}>
-                    <Icon className="h-4 w-4" />
-                    {tab.label.split(' ')[0]}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
           {/* Chat area */}
-          <div className="flex-1 card overflow-hidden flex flex-col" style={{minHeight: '560px'}}>
+          <div className="flex-1 card overflow-hidden flex flex-col" style={{height: '560px'}}>
             {/* Tab header */}
-            <div className="px-5 py-3 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
+            <div className="px-5 py-3 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-2">
                 {(() => { const Icon = currentTab.icon; return <Icon className={`h-5 w-5 ${currentTab.color}`} /> })()}
                 <h2 className="font-semibold">{currentTab.label}</h2>
               </div>
-              <span className="text-xs text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded-full">
-                {LANGUAGES.find(l => l.code === language)?.flag} {LANGUAGES.find(l => l.code === language)?.label}
+              <span className="text-xs text-green-600 bg-green-100 dark:bg-green-900/30 dark:text-green-400 px-2 py-1 rounded-full font-medium">
+                🎁 Free Month
               </span>
             </div>
 
-            {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+            {/* Messages - scrollable area */}
+            <div ref={chatRef} className="flex-1 overflow-y-auto p-4 space-y-4">
               {currentMessages.map((m, i) => (
                 <div key={i} className={`flex gap-3 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
                   <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${m.role === 'assistant' ? 'bg-purple-100 dark:bg-purple-900/30' : 'bg-primary-100 dark:bg-primary-900/30'}`}>
@@ -274,11 +263,14 @@ export default function GeniusAI() {
               {loading && (
                 <div className="flex gap-3">
                   <div className="w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
-                    <Bot className="h-4 w-4 text-purple-600" />
+                    <Bot className="h-4 w-4 text-purple-600 animate-pulse" />
                   </div>
                   <div className="bg-gray-100 dark:bg-gray-800 px-4 py-3 rounded-2xl">
-                    <div className="flex gap-1">
-                      {[0,150,300].map(d => <div key={d} className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay:`${d}ms`}}></div>)}
+                    <div className="flex gap-1 items-center">
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay:'0ms'}}></div>
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay:'150ms'}}></div>
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay:'300ms'}}></div>
+                      <span className="text-xs text-gray-400 ml-2">Genius AI is thinking...</span>
                     </div>
                   </div>
                 </div>
@@ -287,76 +279,53 @@ export default function GeniusAI() {
             </div>
 
             {/* Quick action button */}
-            {getQuickPrompt(activeTab, language) && (
-              <div className="px-4 py-2 border-t border-gray-100 dark:border-gray-800">
-                <button onClick={() => sendMessage(getQuickPrompt(activeTab, language))}
-                  disabled={loading || msgCount >= FREE_LIMIT}
-                  className="btn-primary text-sm py-2 disabled:opacity-50">
+            {getQuickPrompt(activeTab) && (
+              <div className="px-4 py-2 border-t border-gray-100 dark:border-gray-800 flex-shrink-0">
+                <button onClick={() => sendMessage(getQuickPrompt(activeTab))}
+                  disabled={loading}
+                  className="btn-primary text-sm py-2 disabled:opacity-50 w-full justify-center">
                   <Sparkles className="h-3.5 w-3.5" />
-                  {activeTab === 'mock' && (language === 'telugu' ? 'మాక్ టెస్ట్ జనరేట్ చేయి' : language === 'hindi' ? 'मॉक टेस्ट जनरेट करें' : 'Generate Mock Test')}
-                  {activeTab === 'studyplan' && (language === 'telugu' ? 'స్టడీ ప్లాన్ తయారు చేయి' : language === 'hindi' ? 'स्टडी प्लान बनाएं' : 'Generate Study Plan')}
-                  {activeTab === 'career' && (language === 'telugu' ? 'కెరీర్ రోడ్‌మ్యాప్ పొందు' : language === 'hindi' ? 'करियर रोडमैप पाएं' : 'Generate Career Roadmap')}
-                  {activeTab === 'interview' && (language === 'telugu' ? 'ఇంటర్వ్యూ ప్రశ్నలు పొందు' : language === 'hindi' ? 'इंटरव्यू प्रश्न पाएं' : 'Generate Interview Questions')}
-                  {activeTab === 'english' && (language === 'telugu' ? 'ఇంగ్లీష్ ప్రాక్టీస్ ప్రారంభించు' : language === 'hindi' ? 'अंग्रेजी अभ्यास शुरू करें' : 'Start English Practice')}
-                  {activeTab === 'revision' && (language === 'telugu' ? 'రివిజన్ ప్లాన్ తయారు చేయి' : language === 'hindi' ? 'रिवीजन प्लान बनाएं' : 'Create Revision Plan')}
-                  {activeTab === 'currentaffairs' && (language === 'telugu' ? 'కరెంట్ అఫైర్స్ పొందు' : language === 'hindi' ? 'करंट अफेयर्स पाएं' : "Get Today's Current Affairs")}
-                  {activeTab === 'weakness' && (language === 'telugu' ? 'నా బలహీనతలు విశ్లేషించు' : language === 'hindi' ? 'मेरी कमजोरियां विश्लेषण करें' : 'Analyze My Weaknesses')}
+                  {activeTab === 'mock' && (language === 'telugu' ? '📝 మాక్ టెస్ట్ జనరేట్ చేయి' : language === 'hindi' ? '📝 मॉक टेस्ट जनरेट करें' : '📝 Generate Mock Test Now')}
+                  {activeTab === 'studyplan' && (language === 'telugu' ? '📅 స్టడీ ప్లాన్ తయారు చేయి' : language === 'hindi' ? '📅 स्टडी प्लान बनाएं' : '📅 Generate 90-Day Study Plan')}
+                  {activeTab === 'career' && (language === 'telugu' ? '🎯 కెరీర్ రోడ్‌మ్యాప్ పొందు' : language === 'hindi' ? '🎯 करियर रोडमैप पाएं' : '🎯 Generate Career Roadmap')}
+                  {activeTab === 'interview' && (language === 'telugu' ? '💼 ఇంటర్వ్యూ ప్రశ్నలు పొందు' : language === 'hindi' ? '💼 इंटरव्यू प्रश्न पाएं' : '💼 Generate Interview Questions')}
+                  {activeTab === 'english' && (language === 'telugu' ? '🎤 ఇంగ్లీష్ ప్రాక్టీస్ ప్రారంభించు' : language === 'hindi' ? '🎤 अंग्रेजी अभ्यास शुरू करें' : '🎤 Start English Practice')}
+                  {activeTab === 'revision' && (language === 'telugu' ? '📚 రివిజన్ ప్లాన్ తయారు చేయి' : language === 'hindi' ? '📚 रिवीजन प्लान बनाएं' : '📚 Create 7-Day Revision Plan')}
+                  {activeTab === 'currentaffairs' && (language === 'telugu' ? '📰 కరెంట్ అఫైర్స్ పొందు' : language === 'hindi' ? '📰 करंट अफेयर्स पाएं' : "📰 Get Today's Current Affairs")}
+                  {activeTab === 'weakness' && (language === 'telugu' ? '📊 నా బలహీనతలు విశ్లేషించు' : language === 'hindi' ? '📊 कमजोरियां विश्लेषण करें' : '📊 Analyze My Weaknesses')}
                 </button>
               </div>
             )}
 
-            {/* Input */}
-            <div className="p-4 border-t border-gray-100 dark:border-gray-800">
-              {showPaywall ? (
-                <div className="bg-gradient-to-r from-purple-600 to-primary-600 rounded-xl p-4 text-white text-center">
-                  <Lock className="h-6 w-6 mx-auto mb-1" />
-                  <p className="font-bold mb-1">
-                    {language === 'telugu' ? 'రోజువారీ ఉచిత పరిమితి అయిపోయింది!' : language === 'hindi' ? 'दैनिक मुफ्त सीमा समाप्त!' : 'Daily Free Limit Reached!'}
-                  </p>
-                  <p className="text-xs text-purple-100 mb-3">
-                    {language === 'telugu' ? 'అనర్హమైన యాక్సెస్ కోసం అప్‌గ్రేడ్ చేయండి' : language === 'hindi' ? 'असीमित पहुंच के लिए अपग्रेड करें' : 'Upgrade for unlimited Genius AI access'}
-                  </p>
-                  <div className="flex items-center justify-center gap-3">
-                    <div className="text-xl font-extrabold">₹99<span className="text-sm font-normal">/month</span></div>
-                    <a href="https://razorpay.com" target="_blank" rel="noopener noreferrer"
-                      className="bg-white text-purple-700 font-bold px-4 py-1.5 rounded-lg text-sm hover:bg-purple-50">
-                      {language === 'telugu' ? 'అప్‌గ్రేడ్ చేయండి' : language === 'hindi' ? 'अपग्रेड करें' : 'Upgrade Now'}
-                    </a>
-                  </div>
-                  <p className="text-xs text-purple-200 mt-2">
-                    {language === 'telugu' ? 'రేపటి అర్ధరాత్రి రీసెట్ అవుతుంది' : language === 'hindi' ? 'कल मध्यरात्रि रीसेट होगा' : 'Resets tomorrow at midnight'}
-                  </p>
-                </div>
-              ) : (
-                <div className="flex gap-2">
-                  <input className="input flex-1 text-sm"
-                    placeholder={
-                      language === 'telugu' ? 'APPSC, TSPSC గురించి ఏదైనా అడగండి...' :
-                      language === 'hindi' ? 'APPSC, TSPSC के बारे में कुछ भी पूछें...' :
-                      'Ask anything about APPSC, TSPSC exams...'
-                    }
-                    value={input} onChange={e => setInput(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()} />
-                  <button onClick={() => sendMessage()} disabled={loading || !input.trim()}
-                    className="btn-primary px-4 disabled:opacity-50">
-                    <Send className="h-4 w-4" />
-                  </button>
-                </div>
-              )}
+            {/* Input area */}
+            <div className="p-4 border-t border-gray-100 dark:border-gray-800 flex-shrink-0">
+              <div className="flex gap-2">
+                <input className="input flex-1 text-sm"
+                  placeholder={
+                    language === 'telugu' ? 'మీ ప్రశ్న ఇక్కడ టైప్ చేయండి...' :
+                    language === 'hindi' ? 'यहाँ अपना प्रश्न टाइप करें...' :
+                    'Type your question here...'
+                  }
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && !e.shiftKey && !loading && sendMessage()}
+                  disabled={loading}
+                />
+                <button onClick={() => sendMessage()} disabled={loading || !input.trim()}
+                  className="btn-primary px-4 disabled:opacity-50 flex-shrink-0">
+                  <Send className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Pricing */}
+        {/* Pricing card */}
         <div className="mt-6 card p-6 bg-gradient-to-br from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20">
           <div className="flex flex-col md:flex-row items-center justify-between gap-5">
             <div>
-              <h3 className="text-xl font-bold mb-1">
-                {language === 'telugu' ? 'Genius AI Pro కి అప్‌గ్రేడ్ చేయండి' : language === 'hindi' ? 'Genius AI Pro में अपग्रेड करें' : 'Upgrade to Genius AI Pro'}
-              </h3>
-              <p className="text-gray-500 dark:text-gray-400 text-sm mb-3">
-                {language === 'telugu' ? 'అన్ని 11 AI సాధనాలకు అపరిమిత యాక్సెస్' : language === 'hindi' ? 'सभी 11 AI टूल्स तक असीमित पहुंच' : 'Unlimited access to all 11 AI tools'}
-              </p>
+              <h3 className="text-xl font-bold mb-1">After Free Month — Upgrade to Pro</h3>
+              <p className="text-gray-500 dark:text-gray-400 text-sm mb-3">Continue enjoying all 11 AI tools after the free period</p>
               <ul className="grid grid-cols-2 gap-1.5 text-sm text-gray-600 dark:text-gray-300">
                 {['Unlimited AI messages', 'All 11 AI sections', 'Telugu + Hindi + English', 'Unlimited mock tests', 'Personalized study plans', 'Priority support'].map(f => (
                   <li key={f} className="flex items-center gap-1.5">
@@ -366,10 +335,11 @@ export default function GeniusAI() {
               </ul>
             </div>
             <div className="text-center flex-shrink-0">
-              <p className="text-4xl font-extrabold text-primary-600">₹99</p>
-              <p className="text-gray-400 text-sm mb-3">/month</p>
+              <p className="text-sm text-gray-400 line-through">₹399</p>
+              <p className="text-4xl font-extrabold text-primary-600">₹199</p>
+              <p className="text-gray-400 text-sm mb-3">/month after free trial</p>
               <a href="/subscribe" className="btn-primary px-8 py-3 inline-flex">
-                {language === 'telugu' ? 'ఇప్పుడే పొందండి' : language === 'hindi' ? 'अभी पाएं' : 'Get Pro Now'}
+                View Plans
               </a>
             </div>
           </div>
