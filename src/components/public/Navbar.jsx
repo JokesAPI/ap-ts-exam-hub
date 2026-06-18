@@ -9,6 +9,10 @@ const links = [
   { to: '/exams', label: 'Exams' },
   { to: '/current-affairs', label: 'Current Affairs' },
   { to: '/previous-papers', label: 'Previous Papers' },
+  { to: '/about', label: 'About' },
+  { to: '/contact', label: 'Contact' },
+  { to: '/privacy-policy', label: 'Privacy Policy' },
+  { to: '/terms-conditions', label: 'Terms' },
 ]
 
 export default function Navbar() {
