@@ -8,6 +8,11 @@ import Exams from './pages/public/Exams'
 import CurrentAffairs from './pages/public/CurrentAffairs'
 import PreviousPapers from './pages/public/PreviousPapers'
 
+import About from './pages/public/About'
+import Contact from './pages/public/Contact'
+import PrivacyPolicy from './pages/public/PrivacyPolicy'
+import TermsConditions from './pages/public/TermsConditions'
+
 // Admin Pages
 import AdminLogin from './pages/admin/AdminLogin'
 import AdminDashboard from './pages/admin/AdminDashboard'
@@ -31,6 +36,11 @@ export default function App() {
       <Route path="/exams" element={<Exams />} />
       <Route path="/current-affairs" element={<CurrentAffairs />} />
       <Route path="/previous-papers" element={<PreviousPapers />} />
+
+      <Route path="/about" element={<About />} />
+<Route path="/contact" element={<Contact />} />
+<Route path="/privacy-policy" element={<PrivacyPolicy />} />
+<Route path="/terms-conditions" element={<TermsConditions />} />
 
       {/* Admin */}
       <Route path="/admin/login" element={<AdminLogin />} />
