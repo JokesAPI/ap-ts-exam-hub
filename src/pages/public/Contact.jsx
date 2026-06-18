@@ -37,14 +37,14 @@ export default function Contact() {
               <MapPin className="h-5 w-5 text-primary-600 mt-1 flex-shrink-0" />
               <div>
                 <p className="font-semibold">Location</p>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Nellore, Andhra Pradesh, India</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">India</p>
               </div>
             </div>
             <div className="card p-5 flex items-start gap-4">
               <Mail className="h-5 w-5 text-primary-600 mt-1 flex-shrink-0" />
               <div>
                 <p className="font-semibold">Email</p>
-                <p className="text-sm text-gray-500 dark:text-gray-400">admin@aptsexamhub.in</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">info.apexamhub@gmail.com</p>
               </div>
             </div>
             <div className="card p-5 flex items-start gap-4">
