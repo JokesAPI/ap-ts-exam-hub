@@ -80,14 +80,14 @@ function langLabel(code) {
 function buildSystemPrompt(tabId, lang) {
   const langRule = lang && lang !== 'en-US'
     ? `CRITICAL LANGUAGE RULE: The student is using "${lang}". You MUST reply ENTIRELY in that language and script. Telugu -> తెలుగు లిపి. Hindi -> देवनागरी. Never mix languages. Never switch to English.`
-    : `Detect the student's language from their message and reply in the SAME language and script every time.`
+    : `Detect the student language from their message and reply in the SAME language and script every time.`
 
   const base = `You are Genius AI 🧠 -- a warm, encouraging personal exam mentor for students preparing for Indian government exams: APPSC, TSPSC, AP Police, TS Police, DSC, TET, RRB, SSC. Be like a knowledgeable friend -- supportive, clear, practical. ${langRule} NEVER use markdown symbols like **, ##, or backticks. Write in plain text only.`
 
   const extras = {
     explain:      'Explain the given concept or answer clearly with a real-life example. Use analogies Indian students can relate to. Be concise and easy to understand.',
     studyplan:    'Create a practical day-wise study plan. Include: subjects, specific topics, hours per day, weekly revision schedule. Make it realistic and motivating.',
-    doubt:        'Answer the student's doubt clearly. Give the correct answer with a step-by-step explanation and a helpful example.',
+    doubt:        'Answer the student doubt clearly. Give the correct answer with a step-by-step explanation and a helpful example.',
     career:       'Give a detailed step-by-step career roadmap. Include: eligibility, exam stages, timeline, preparation strategy, important books/resources.',
     interview:    'Generate 10 important interview questions for AP/TS government exams with ideal model answers. Focus on AP/TS history, governance, current affairs.',
     english:      'Provide English speaking practice exercises. Include: model sentences, common interview phrases, pronunciation tips, confidence-building tips.',
@@ -247,7 +247,7 @@ export default function GeniusAI() {
       // All 5 answers collected -- send to AI
       addMsg('weakness', withUser)
       setLoading(true)
-      const summary = `Student's diagnostic answers:
+      const summary = `Student diagnostic answers:
 Exam: ${answers[0] || 'Not specified'}
 Difficult subjects: ${answers[1] || 'Not specified'}
 Study hours/day: ${answers[2] || 'Not specified'}
