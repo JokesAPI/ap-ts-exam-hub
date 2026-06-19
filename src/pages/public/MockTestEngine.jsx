@@ -41,35 +41,27 @@ export default function MockTestEngine() {
   }, [phase])
 
   async function loadQuestions() {
-    const { data, error } = await supabase
-      .from('mock_questions')
-      .select('*')
-      .eq('test_id', testId)
-      .limit(10)
-
-    if (error || !data || data.length === 0) {
-      // Fallback demo questions
-      const demo = Array.from({length: 10}, (_, i) => ({
-        id: `demo-${i}`,
-        question: `Sample Question ${i+1}: Which of the following is correct about AP/TS government exams?`,
-        option_a: 'APPSC conducts Group exams',
-        option_b: 'TSPSC is for Telangana',
-        option_c: 'Both A and B are correct',
-        option_d: 'None of the above',
-        correct_answer: 'C',
-        explanation: 'Both APPSC (Andhra Pradesh) and TSPSC (Telangana) conduct Group examinations for state government jobs.',
-        subject: 'General Studies',
-        difficulty: 'easy'
-      }))
-      setQuestions(demo)
-    } else {
-      // Shuffle questions
-      const shuffled = [...data].sort(() => Math.random() - 0.5)
-      setQuestions(shuffled)
-    }
-    setTimeLeft((data?.length || 10) * TEST_TIME_PER_Q)
+    // First use local question bank (always works)
+    const localQs = getQuestionsForTest(testId)
+    const shuffled = [...localQs].sort(() => Math.random() - 0.5)
+    setQuestions(shuffled)
+    setTimeLeft(shuffled.length * TEST_TIME_PER_Q)
     setPhase('test')
     startTime.current = Date.now()
+
+    // Try to load from Supabase in background (bonus questions)
+    try {
+      const { data } = await supabase
+        .from('mock_questions')
+        .select('*')
+        .eq('test_id', testId)
+        .limit(10)
+      if (data && data.length >= 5) {
+        const supabaseShuffled = [...data].sort(() => Math.random() - 0.5)
+        setQuestions(supabaseShuffled)
+        setTimeLeft(supabaseShuffled.length * TEST_TIME_PER_Q)
+      }
+    } catch {}
   }
 
   function selectAnswer(questionId, answer) {
