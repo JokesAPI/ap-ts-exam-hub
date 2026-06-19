@@ -362,8 +362,18 @@ Make questions relevant to Indian government exam syllabus. Do not use markdown.
   return (
     <Layout>
       <Helmet>
-        <title>Mock Tests - AP TS Exam Hub</title>
-        <meta name="description" content="Free mock tests for APPSC, TSPSC, AP Police, TS Police exams. Practice online with instant results." />
+        <title>Free APPSC TSPSC Mock Test Online 2024 | AP TS Exam Hub</title>
+        <meta name="description" content="Practice free APPSC Group-2, TSPSC Group-1, AP Police SI mock tests online. AI-generated fresh questions, live timer, instant results and full answer review." />
+        <meta name="keywords" content="APPSC mock test free, TSPSC online test, AP police practice test, DSC TET mock test, APPSC Group-2 questions online, Telugu medium mock test 2024" />
+        <link rel="canonical" href="https://ap-ts-exam-hub.vercel.app/mock-tests" />
+        <meta property="og:title" content="Free APPSC TSPSC Mock Test Online | AP TS Exam Hub" />
+        <meta property="og:description" content="Practice APPSC Group-2, TSPSC Group-1, AP Police mock tests free online. AI questions, live timer, instant feedback and score review." />
+        <meta property="og:url" content="https://ap-ts-exam-hub.vercel.app/mock-tests" />
+        <meta property="og:image" content="https://ap-ts-exam-hub.vercel.app/og-image.png" />
+        <meta property="og:type" content="website" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="Free APPSC TSPSC Mock Test | AP TS Exam Hub" />
+        <meta name="twitter:description" content="Practice free mock tests for APPSC, TSPSC, AP Police exams with instant results." />
       </Helmet>
 
       <section className="bg-gradient-to-br from-orange-800 to-primary-700 text-white py-10 px-4">
@@ -453,7 +463,7 @@ Make questions relevant to Indian government exam syllabus. Do not use markdown.
                 </li>
               ))}
             </ul>
-            <a href="https://rzp.io/rzp/JuthfaVR" target="_blank" rel="noopener noreferrer"
+            <a href="https://razorpay.com" target="_blank" rel="noopener noreferrer"
               className="btn-primary w-full justify-center py-3 text-base">
               Get Pro — ₹99/month
             </a>
@@ -470,7 +480,7 @@ Make questions relevant to Indian government exam syllabus. Do not use markdown.
             <Lock className="h-12 w-12 mx-auto mb-3 text-purple-500" />
             <h3 className="text-xl font-bold mb-2">Free Limit Reached!</h3>
             <p className="text-gray-500 dark:text-gray-400 mb-5">You have used your 2 free mock tests. Upgrade to continue practicing.</p>
-            <a https://rzp.io/rzp/JuthfaVR" target="_blank" rel="noopener noreferrer"
+            <a href="https://razorpay.com" target="_blank" rel="noopener noreferrer"
               className="btn-primary w-full justify-center py-3 mb-3">
               Upgrade for ₹99/month
             </a>
