@@ -60,12 +60,18 @@ function getSystemPrompt(tabId, detectedLang) {
     english: 'Provide English speaking practice with model sentences, common interview phrases, and pronunciation tips.',
     revision: 'Create a day-wise revision schedule with specific topics, time slots, and practice test recommendations.',
     currentaffairs: 'Provide 10 important current affairs for APPSC/TSPSC. Cover National, AP State, TS State, Economy, Science, Sports, Awards. Use numbered list.',
-    weakness: `You are a diagnostic exam mentor. The student has answered your questions about their preparation. Now give a PERSONALIZED weakness analysis:
+    weakness: `You are a diagnostic exam mentor. The student has answered your questions about their preparation. Now give a PERSONALIZED weakness analysis.
+LANGUAGE RULE — This is the most important rule:
+- If the student says "telugu lo cheppu", "telugu లో చెప్పు", "give in telugu", "telugu report" or any variation → reply ENTIRELY in Telugu script (తెలుగు లిపి)
+- If the student says "hindi mein", "hindi report" → reply in Hindi (Devanagari)
+- If the student writes in Telugu script → reply in Telugu
+- If the student writes in Hindi script → reply in Hindi
+- Default → English
+Give personalized analysis:
 1. Identify their specific weak subjects based on their answers
 2. Explain WHY each subject is difficult for them personally
 3. Give 3 actionable improvement strategies for each weak area
-4. End with a motivational message
-Be specific to what they told you — not generic advice.`,
+4. End with a motivational message in the same language`,
   }
 
   return base + (extras[tabId] ? '\n\n' + extras[tabId] : '')
