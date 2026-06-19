@@ -453,7 +453,7 @@ Make questions relevant to Indian government exam syllabus. Do not use markdown.
                 </li>
               ))}
             </ul>
-            <a href="https://razorpay.com" target="_blank" rel="noopener noreferrer"
+            <a href="https://rzp.io/rzp/JuthfaVR" target="_blank" rel="noopener noreferrer"
               className="btn-primary w-full justify-center py-3 text-base">
               Get Pro — ₹99/month
             </a>
@@ -470,7 +470,7 @@ Make questions relevant to Indian government exam syllabus. Do not use markdown.
             <Lock className="h-12 w-12 mx-auto mb-3 text-purple-500" />
             <h3 className="text-xl font-bold mb-2">Free Limit Reached!</h3>
             <p className="text-gray-500 dark:text-gray-400 mb-5">You have used your 2 free mock tests. Upgrade to continue practicing.</p>
-            <a href="https://razorpay.com" target="_blank" rel="noopener noreferrer"
+            <a https://rzp.io/rzp/JuthfaVR" target="_blank" rel="noopener noreferrer"
               className="btn-primary w-full justify-center py-3 mb-3">
               Upgrade for ₹99/month
             </a>
