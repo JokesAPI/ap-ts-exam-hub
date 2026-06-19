@@ -182,7 +182,7 @@ Make questions relevant to Indian government exam syllabus. Do not use markdown.
 
     return (
       <Layout>
-        <Helmet><title>{selectedTest?.title} — Mock Test</title></Helmet>
+        <Helmet><title>{selectedTest?.title} -- Mock Test</title></Helmet>
 
         {/* Top bar */}
         <div className="sticky top-0 z-10 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-4 py-3">
@@ -289,7 +289,7 @@ Make questions relevant to Indian government exam syllabus. Do not use markdown.
   if (screen === 'result') {
     return (
       <Layout>
-        <Helmet><title>Results — {selectedTest?.title}</title></Helmet>
+        <Helmet><title>Results -- {selectedTest?.title}</title></Helmet>
         <div className="max-w-3xl mx-auto px-4 py-10">
 
           {/* Score card */}
@@ -301,7 +301,7 @@ Make questions relevant to Indian government exam syllabus. Do not use markdown.
             <p className="text-gray-500 mb-6">
               {pct >= 80 ? '🎉 Excellent! You are well prepared!' :
                pct >= 60 ? '👍 Good job! Keep practicing!' :
-               pct >= 40 ? '📚 Keep studying — you can do it!' :
+               pct >= 40 ? '📚 Keep studying -- you can do it!' :
                '💪 Don\'t give up! Review the topics and try again.'}
             </p>
             <div className="flex gap-3 justify-center flex-wrap">
@@ -403,7 +403,7 @@ Make questions relevant to Indian government exam syllabus. Do not use markdown.
             <span className="font-semibold">Free Plan: {Math.max(0, FREE_MOCK_LIMIT - usedCount)} test{Math.max(0, FREE_MOCK_LIMIT - usedCount) !== 1 ? 's' : ''} remaining</span>
           </div>
           <a href="#upgrade" className="btn-primary text-sm py-1.5">
-            Upgrade ₹99/month — Unlimited Tests
+            Upgrade ₹99/month -- Unlimited Tests
           </a>
         </div>
 
@@ -465,7 +465,7 @@ Make questions relevant to Indian government exam syllabus. Do not use markdown.
             </ul>
             <a href="https://razorpay.com" target="_blank" rel="noopener noreferrer"
               className="btn-primary w-full justify-center py-3 text-base">
-              Get Pro — ₹99/month
+              Get Pro -- ₹99/month
             </a>
           </div>
           <p className="text-xs text-gray-400">Secure payment via Razorpay. Cancel anytime.</p>

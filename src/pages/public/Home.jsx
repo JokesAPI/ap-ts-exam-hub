@@ -36,14 +36,14 @@ export default function Home() {
     <Layout>
       <Helmet>
         {/* ── Primary SEO ── */}
-        <title>AP TS Exam Hub — Free APPSC TSPSC Exam Preparation Portal</title>
+        <title>AP TS Exam Hub -- Free APPSC TSPSC Exam Preparation Portal</title>
         <meta name="description" content="Best free portal for APPSC, TSPSC, AP Police, DSC, TET exam preparation. Free mock tests, current affairs, previous papers, AI mentor in Telugu and English." />
         <meta name="keywords" content="APPSC mock test, TSPSC exam preparation, AP police exam, DSC TET practice, APPSC Group-2 free test, TSPSC previous papers Telugu, AP TS exam hub" />
         <link rel="canonical" href="https://ap-ts-exam-hub.vercel.app/" />
 
         {/* ── Open Graph (WhatsApp / Facebook / LinkedIn sharing) ── */}
         <meta property="og:type"        content="website" />
-        <meta property="og:title"       content="AP TS Exam Hub — Free APPSC TSPSC Exam Preparation" />
+        <meta property="og:title"       content="AP TS Exam Hub -- Free APPSC TSPSC Exam Preparation" />
         <meta property="og:description" content="Free mock tests, current affairs, previous papers and AI mentor for APPSC, TSPSC, AP Police, DSC, TET exams in Telugu and English." />
         <meta property="og:url"         content="https://ap-ts-exam-hub.vercel.app/" />
         <meta property="og:image"       content="https://ap-ts-exam-hub.vercel.app/og-image.png" />
@@ -51,7 +51,7 @@ export default function Home() {
 
         {/* ── Twitter Card ── */}
         <meta name="twitter:card"        content="summary_large_image" />
-        <meta name="twitter:title"       content="AP TS Exam Hub — Free APPSC TSPSC Exam Preparation" />
+        <meta name="twitter:title"       content="AP TS Exam Hub -- Free APPSC TSPSC Exam Preparation" />
         <meta name="twitter:description" content="Free mock tests, current affairs and AI mentor for AP & TS government exams." />
         <meta name="twitter:image"       content="https://ap-ts-exam-hub.vercel.app/og-image.png" />
       </Helmet>
@@ -97,7 +97,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── SEO CONTENT BLOCK — Google reads this ── */}
+      {/* ── SEO CONTENT BLOCK -- Google reads this ── */}
       <section className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pb-10">
         <div className="card p-8">
           <h2 className="text-2xl font-bold mb-3 text-gray-800 dark:text-gray-100">
@@ -108,15 +108,15 @@ export default function Home() {
             TSPSC Group-1, Group-2, AP Police SI, TS Police SI, DSC, TET, RRB, and SSC
             exam preparation in Telugu and English. Get free mock tests with instant results,
             daily current affairs, previous year question papers, and AI-powered personal
-            mentoring — all in one place.
+            mentoring -- all in one place.
           </p>
           <p className="text-gray-600 dark:text-gray-400 mb-6 leading-relaxed">
-            Our Genius AI mentor answers your questions in Telugu, Hindi, and English —
+            Our Genius AI mentor answers your questions in Telugu, Hindi, and English --
             24/7 exam coaching at zero cost. Practice with AI-generated mock tests, track
             your score, and get personalized weakness analysis to crack your exam faster.
           </p>
 
-          {/* Exams list — keyword rich for SEO */}
+          {/* Exams list -- keyword rich for SEO */}
           <h3 className="text-lg font-bold mb-3 text-gray-800 dark:text-gray-100">
             Exams We Cover
           </h3>
