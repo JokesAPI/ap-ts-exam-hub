@@ -10,11 +10,11 @@ const RESET_KEY = 'genius_ai_date'
 
 // ── Weakness Analyzer mentor questions ──────────────────────────────────────
 const WEAKNESS_QUESTIONS = [
-  "👋 Hello! I'm your personal exam mentor.\n\nTo analyze your weaknesses accurately, I'll ask you a few quick questions.\n\nFirst: **Which exam are you preparing for?**\n(e.g., APPSC Group-2, TSPSC Group-1, DSC, TET, Police...)",
-  "Great! Now tell me — **which subjects do you find most difficult?**\n(e.g., History, Polity, Maths, Science, Current Affairs...)",
-  "How many **hours do you study per day** on average?",
-  "Have you attempted any **mock tests or previous papers**? If yes, which topics did you score low in?",
-  "What is your **biggest challenge** while studying?\n(e.g., memory, time management, English medium, concepts...)",
+  "👋 Hello! I'm your personal exam mentor.\n\nTo analyze your weaknesses accurately, I'll ask you a few quick questions.\n\nFirst: Which exam are you preparing for?\n(e.g., APPSC Group-2, TSPSC Group-1, DSC, TET, Police...)",
+  "Great! Now tell me — which subjects do you find most difficult?\n(e.g., History, Polity, Maths, Science, Current Affairs...)",
+  "How many hours do you study per day on average?",
+  "Have you attempted any mock tests or previous papers? If yes, which topics did you score low in?",
+  "What is your biggest challenge while studying?\n(e.g., memory, time management, English medium, concepts...)",
 ]
 
 const tabs = [
@@ -34,12 +34,37 @@ const tabs = [
 // ── Strip markdown symbols from AI response ─────────────────────────────────
 function stripMarkdown(text) {
   return text
-    .replace(/\*\*(.*?)\*\*/g, '$1')   // bold
-    .replace(/\*(.*?)\*/g, '$1')        // italic
-    .replace(/#{1,6}\s/g, '')           // headings
-    .replace(/`{1,3}(.*?)`{1,3}/gs, '$1') // code
-    .replace(/_{1,2}(.*?)_{1,2}/g, '$1')  // underscore
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/#{1,6}\s/g, '')
+    .replace(/`{1,3}(.*?)`{1,3}/gs, '$1')
+    .replace(/_{1,2}(.*?)_{1,2}/g, '$1')
     .trim()
+}
+
+// ── Detect language from text (script + romanized keywords) ─────────────────
+function detectLang(text) {
+  if (/[\u0C00-\u0C7F]/.test(text)) return 'te-IN'   // Telugu script
+  if (/[\u0900-\u097F]/.test(text)) return 'hi-IN'   // Hindi script
+  if (/[\u0600-\u06FF]/.test(text)) return 'ur-PK'   // Urdu
+  if (/[\u0B80-\u0BFF]/.test(text)) return 'ta-IN'   // Tamil
+  if (/[\u0D00-\u0D7F]/.test(text)) return 'ml-IN'   // Malayalam
+  if (/[\u0C80-\u0CFF]/.test(text)) return 'kn-IN'   // Kannada
+
+  // Romanized Telugu keyword detection
+  const lower = text.toLowerCase()
+  const teluguWords = ['cheppu', 'gurinchi', 'ante', 'undi', 'avutundi',
+    'cheyyi', 'cheyandi', 'meeru', 'mee', 'naaku', 'maku', 'ikkada',
+    'akkada', 'emi', 'ela', 'evaru', 'ekkada', 'unte', 'ledu', 'ayindi',
+    'chala', 'manchidi', 'pettandi', 'chudandi', 'telugu lo', 'lo cheppu']
+  if (teluguWords.some(w => lower.includes(w))) return 'te-IN'
+
+  // Romanized Hindi keyword detection
+  const hindiWords = ['batao', 'bolo', 'karo', 'mein batao', 'hain', 'kya hai',
+    'kaise', 'kyun', 'mujhe', 'aapko', 'samjhao', 'hindi mein']
+  if (hindiWords.some(w => lower.includes(w))) return 'hi-IN'
+
+  return 'en-US'
 }
 
 // ── System prompt ────────────────────────────────────────────────────────────
@@ -79,7 +104,6 @@ Give personalized analysis:
 
 function getQuickPrompt(tabId) {
   const prompts = {
-    mock: 'Generate a 10-question MCQ mock test for APPSC Group-2 General Studies with 4 options, correct answer, and explanation for each question.',
     studyplan: 'Create a detailed 90-day study plan for APPSC Group-2 exam with daily schedule, subject-wise time allocation, and important topics.',
     career: 'Create a complete career roadmap for becoming an IAS/IPS officer from Andhra Pradesh with eligibility, timeline, exam stages, and preparation strategy.',
     interview: 'Generate 10 important APPSC Group-2 interview questions with ideal model answers.',
@@ -93,36 +117,11 @@ function getQuickPrompt(tabId) {
 function getWelcomeMessage(tabId) {
   const msgs = {
     chat: '👋 Hello! I am Genius AI — your personal APPSC/TSPSC exam mentor!\n\nAsk me anything in any language — Telugu, Hindi, English, or any other language. I will reply in the same language!\n\n• Exam notifications\n• Study tips\n• Current affairs\n• Career guidance\n\n🎁 FREE for the first month — all features unlocked!',
-    mock: '📝 Mock Test Generator\n\nClick the button below to get an instant 10-question APPSC mock test with answers and explanations!\n\n🎁 FREE for first month!',
-    currentaffairs: '📰 Current Affairs Summarizer\n\nClick below to get this month\'s important current affairs for AP & TS exams!\n\nCovers: National • AP State • TS State • Economy • Science • Sports • Awards',
+    mock: '📝 Mock Test\n\nClick the button below to go to the full interactive mock test with timer, instant feedback, and score tracking!\n\n🎁 FREE for first month!',
+    currentaffairs: "📰 Current Affairs Summarizer\n\nClick below to get this month's important current affairs for AP & TS exams!\n\nCovers: National • AP State • TS State • Economy • Science • Sports • Awards",
     weakness: '👋 Hello! I am your personal exam mentor.\n\nTo analyze your weaknesses accurately, I will ask you a few quick questions first.\n\nWhich exam are you preparing for?\n(e.g., APPSC Group-2, TSPSC Group-1, DSC, TET, Police...)\n\n🎤 You can speak or type in any language!',
   }
   return msgs[tabId] || `Ready to help with ${tabs.find(t => t.id === tabId)?.label || ''}!\n\nType or speak your question in any language. I will reply in the same language!\n\n🎁 FREE for first month!`
-}
-
-// ── Detect language from speech result ──────────────────────────────────────
-function detectLang(text) {
-  if (/[\u0C00-\u0C7F]/.test(text)) return 'te-IN'   // Telugu script
-  if (/[\u0900-\u097F]/.test(text)) return 'hi-IN'   // Hindi script
-  if (/[\u0600-\u06FF]/.test(text)) return 'ur-PK'   // Urdu
-  if (/[\u0B80-\u0BFF]/.test(text)) return 'ta-IN'   // Tamil
-  if (/[\u0D00-\u0D7F]/.test(text)) return 'ml-IN'   // Malayalam
-  if (/[\u0C80-\u0CFF]/.test(text)) return 'kn-IN'   // Kannada
-
-  // ✅ Romanized Telugu keyword detection
-  const lower = text.toLowerCase()
-  const teluguWords = ['cheppu', 'gurinchi', 'ante', 'undi', 'avutundi',
-    'cheyyi', 'cheyandi', 'meeru', 'mee', 'naaku', 'maku', 'ikkada',
-    'akkada', 'emi', 'ela', 'evaru', 'ekkada', 'unte', 'ledu', 'ayindi',
-    'chala', 'manchidi', 'pettandi', 'chudandi', 'telugu', 'lo cheppu']
-  if (teluguWords.some(w => lower.includes(w))) return 'te-IN'
-
-  // Romanized Hindi keyword detection
-  const hindiWords = ['batao', 'bolo', 'karo', 'mein', 'hain', 'hai',
-    'kya', 'kaise', 'kyun', 'mujhe', 'aapko', 'samjhao', 'hindi']
-  if (hindiWords.some(w => lower.includes(w))) return 'hi-IN'
-
-  return 'en-US'
 }
 
 export default function GeniusAI() {
@@ -134,7 +133,7 @@ export default function GeniusAI() {
   const [isListening, setIsListening] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [speechEnabled, setSpeechEnabled] = useState(true)
-  const [detectedLang, setDetectedLang] = useState(null) // e.g. 'te-IN'
+  const [detectedLang, setDetectedLang] = useState(null)
   const [weaknessStep, setWeaknessStep] = useState(0)
   const [weaknessAnswers, setWeaknessAnswers] = useState([])
 
@@ -144,18 +143,14 @@ export default function GeniusAI() {
   const synthRef = useRef(window.speechSynthesis)
 
   const currentTab = tabs.find(t => t.id === activeTab)
-
   const currentMessages = messages[activeTab] || [
     { role: 'assistant', content: getWelcomeMessage(activeTab) }
   ]
 
   useEffect(() => {
-    if (chatRef.current) {
-      chatRef.current.scrollTop = chatRef.current.scrollHeight
-    }
+    if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight
   }, [messages, activeTab, loading])
 
-  // ── Stop speaking when tab changes ───────────────────────────────────────
   useEffect(() => {
     synthRef.current?.cancel()
     setIsSpeaking(false)
@@ -163,21 +158,18 @@ export default function GeniusAI() {
   }, [activeTab])
 
   // ── Speech Output ─────────────────────────────────────────────────────────
-  const speak = useCallback((text) => {
+  const speak = useCallback((text, langOverride) => {
     if (!speechEnabled || !window.speechSynthesis) return
     synthRef.current.cancel()
-    const clean = stripMarkdown(text).slice(0, 500) // limit length
+    const clean = stripMarkdown(text).slice(0, 500)
     const utt = new SpeechSynthesisUtterance(clean)
-
-    // Pick voice based on detected language
     const voices = synthRef.current.getVoices()
-    const langCode = detectedLang || 'en-US'
+    const langCode = langOverride || detectedLang || 'en-US'
     const match = voices.find(v => v.lang.startsWith(langCode.split('-')[0]))
     if (match) utt.voice = match
     utt.lang = langCode
     utt.rate = 0.95
     utt.pitch = 1
-
     utt.onstart = () => setIsSpeaking(true)
     utt.onend = () => setIsSpeaking(false)
     utt.onerror = () => setIsSpeaking(false)
@@ -193,35 +185,29 @@ export default function GeniusAI() {
   const startListening = useCallback(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SpeechRecognition) {
-      setError('Speech recognition not supported in this browser. Please use Chrome.')
+      setError('Speech recognition not supported. Please use Chrome.')
       return
     }
-
     stopSpeaking()
     const recognition = new SpeechRecognition()
     recognition.continuous = false
     recognition.interimResults = false
-    // Listen in multiple languages by trying auto-detect
     recognition.lang = detectedLang || 'en-IN'
-
     recognition.onstart = () => setIsListening(true)
-
     recognition.onresult = (e) => {
       const transcript = e.results[0][0].transcript
       const lang = detectLang(transcript)
       setDetectedLang(lang)
       setInput(transcript)
       setIsListening(false)
-	  setTimeout(() => sendMessage(transcript), 300)
+      // ✅ Auto-send after speech
+      setTimeout(() => sendMessage(transcript), 300)
     }
-
     recognition.onerror = (e) => {
       setIsListening(false)
       if (e.error !== 'no-speech') setError('Mic error: ' + e.error)
     }
-
     recognition.onend = () => setIsListening(false)
-
     recognitionRef.current = recognition
     recognition.start()
   }, [detectedLang])
@@ -238,10 +224,8 @@ export default function GeniusAI() {
     setWeaknessAnswers(answers)
 
     if (step < WEAKNESS_QUESTIONS.length - 1) {
-      // Still collecting answers — ask next question
       const nextQ = WEAKNESS_QUESTIONS[step + 1]
       setWeaknessStep(step + 1)
-
       const newUserMsg = { role: 'user', content: userText }
       const nextAiMsg = { role: 'assistant', content: nextQ }
       setMessages(prev => ({
@@ -250,7 +234,6 @@ export default function GeniusAI() {
       }))
       if (speechEnabled) speak(nextQ)
     } else {
-      // All answers collected — send to AI for analysis
       const newUserMsg = { role: 'user', content: userText }
       const history = [
         ...(messages.weakness || [{ role: 'assistant', content: getWelcomeMessage('weakness') }]),
@@ -272,11 +255,14 @@ Now give a personalized weakness analysis based on these answers.`
         const systemPrompt = getSystemPrompt('weakness', detectedLang)
         const reply = await callGroq(systemPrompt, [{ role: 'user', content: summary }])
         const clean = stripMarkdown(reply)
+        // ✅ Detect language from AI reply for correct voice
+        const replyLang = detectLang(clean)
+        if (replyLang !== 'en-US') setDetectedLang(replyLang)
         setMessages(prev => ({
           ...prev,
           weakness: [...history, { role: 'assistant', content: clean }]
         }))
-        if (speechEnabled) speak(clean)
+        if (speechEnabled) speak(clean, replyLang !== 'en-US' ? replyLang : null)
       } catch (err) {
         setError(`Error: ${err.message}`)
       }
@@ -289,12 +275,31 @@ Now give a personalized weakness analysis based on these answers.`
     const userText = customPrompt || input.trim()
     if (!userText) return
 
-    // Detect language from typed text too
-    const lang = detectLang(userText)
-    if (lang !== 'en-US') setDetectedLang(lang)
+    // ✅ Keyword-based language override + script detection
+    const lowerText = userText.toLowerCase()
+    if (lowerText.includes('telugu') &&
+       (lowerText.includes('report') || lowerText.includes('cheppu') ||
+        lowerText.includes('lo') || lowerText.includes('లో') ||
+        lowerText.includes('give') || lowerText.includes('explain'))) {
+      setDetectedLang('te-IN')
+    } else if (lowerText.includes('hindi') &&
+       (lowerText.includes('report') || lowerText.includes('mein') ||
+        lowerText.includes('batao') || lowerText.includes('give') ||
+        lowerText.includes('explain'))) {
+      setDetectedLang('hi-IN')
+    } else {
+      const lang = detectLang(userText)
+      if (lang !== 'en-US') setDetectedLang(lang)
+    }
 
     setError('')
     setInput('')
+
+    // Mock Test tab → redirect to interactive mock test page
+    if (activeTab === 'mock' && !customPrompt) {
+      window.location.href = '/mock-tests'
+      return
+    }
 
     // Weakness tab uses mentor flow
     if (activeTab === 'weakness' && !customPrompt) {
@@ -311,11 +316,14 @@ Now give a personalized weakness analysis based on these answers.`
       const systemPrompt = getSystemPrompt(activeTab, detectedLang)
       const reply = await callGroq(systemPrompt, updatedMessages)
       const clean = stripMarkdown(reply)
+      // ✅ Detect language from AI reply for correct voice output
+      const replyLang = detectLang(clean)
+      if (replyLang !== 'en-US') setDetectedLang(replyLang)
       setMessages(prev => ({
         ...prev,
         [activeTab]: [...updatedMessages, { role: 'assistant', content: clean }]
       }))
-      if (speechEnabled) speak(clean)
+      if (speechEnabled) speak(clean, replyLang !== 'en-US' ? replyLang : null)
     } catch (err) {
       console.error('Genius AI error:', err)
       setError(`Error: ${err.message}. Please check your Groq API key.`)
@@ -372,7 +380,6 @@ Now give a personalized weakness analysis based on these answers.`
                 : 'Speak or type in any language — AI auto-detects!'}
             </span>
           </div>
-          {/* Voice toggle */}
           <button
             onClick={() => { setSpeechEnabled(v => !v); if (isSpeaking) stopSpeaking() }}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-medium transition-all ${speechEnabled ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-800'}`}
@@ -453,7 +460,6 @@ Now give a personalized weakness analysis based on these answers.`
                   </div>
                   <div className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${m.role === 'assistant' ? 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100' : 'bg-primary-600 text-white'}`}>
                     {m.content}
-                    {/* Speak button on AI messages */}
                     {m.role === 'assistant' && i > 0 && (
                       <button onClick={() => speak(m.content)}
                         className="mt-2 flex items-center gap-1 text-xs text-gray-400 hover:text-purple-500 transition-colors">
@@ -481,14 +487,22 @@ Now give a personalized weakness analysis based on these answers.`
               <div ref={bottomRef} />
             </div>
 
-            {/* Quick action button — not shown for weakness (mentor flow handles it) */}
-            {getQuickPrompt(activeTab) && activeTab !== 'weakness' && (
+            {/* Quick action buttons */}
+            {activeTab === 'mock' && (
+              <div className="px-4 py-2 border-t border-gray-100 dark:border-gray-800 flex-shrink-0">
+                <a href="/mock-tests"
+                  className="btn-primary text-sm py-2 w-full justify-center">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  📝 Go to Interactive Mock Test
+                </a>
+              </div>
+            )}
+            {getQuickPrompt(activeTab) && activeTab !== 'weakness' && activeTab !== 'mock' && (
               <div className="px-4 py-2 border-t border-gray-100 dark:border-gray-800 flex-shrink-0">
                 <button onClick={() => sendMessage(getQuickPrompt(activeTab))}
                   disabled={loading}
                   className="btn-primary text-sm py-2 disabled:opacity-50 w-full justify-center">
                   <Sparkles className="h-3.5 w-3.5" />
-                  {activeTab === 'mock' && '📝 Generate Mock Test Now'}
                   {activeTab === 'studyplan' && '📅 Generate 90-Day Study Plan'}
                   {activeTab === 'career' && '🎯 Generate Career Roadmap'}
                   {activeTab === 'interview' && '💼 Generate Interview Questions'}
@@ -502,7 +516,6 @@ Now give a personalized weakness analysis based on these answers.`
             {/* Input area */}
             <div className="p-4 border-t border-gray-100 dark:border-gray-800 flex-shrink-0">
               <div className="flex gap-2">
-                {/* Mic button */}
                 <button
                   onClick={isListening ? stopListening : startListening}
                   disabled={loading}
@@ -513,7 +526,6 @@ Now give a personalized weakness analysis based on these answers.`
                     }`}>
                   {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
                 </button>
-
                 <input
                   className="input flex-1 text-sm"
                   placeholder={isListening ? '🎤 Listening... speak now' : 'Type or speak in any language...'}
