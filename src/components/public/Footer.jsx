@@ -75,7 +75,7 @@ export default function Footer() {
         </div>
 
         <div className="border-t border-white/10 mt-8 pt-6 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-blue-300">
-          <p>© {new Date().getFullYear()} AP TS Exam Hub. All rights reserved. | Nellore, Andhra Pradesh, India</p>
+          <p>© {new Date().getFullYear()} AP TS Exam Hub. All rights reserved. | India</p>
           <p>📧 info.apexamhub@gmail.com</p>
         </div>
       </div>

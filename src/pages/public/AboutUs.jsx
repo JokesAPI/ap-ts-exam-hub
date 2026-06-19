@@ -95,7 +95,7 @@ export default function AboutUs() {
           <h2 className="text-2xl font-bold mb-4">Based In</h2>
           <div className="flex items-center gap-3 text-gray-600 dark:text-gray-300">
             <MapPin className="h-5 w-5 text-primary-600" />
-            <p>Nellore, Andhra Pradesh, India</p>
+            <p>India</p>
           </div>
           <p className="mt-3 text-gray-500 dark:text-gray-400">Built with ❤️ for students of AP & Telangana</p>
         </div>
