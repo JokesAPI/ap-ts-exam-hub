@@ -1,577 +1,628 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Helmet } from 'react-helmet-async'
 import Layout from '../../components/Layout'
-import { Send, Bot, User, Sparkles, Brain, FileText, Target, Clock, Lock, BookOpen, Mic, MicOff, Volume2, VolumeX, BarChart2, Briefcase, MessageSquare, Calendar, TrendingUp, ChevronRight, Globe } from 'lucide-react'
+import {
+  Send, Bot, User, Sparkles, Brain, FileText, Target,
+  BookOpen, Mic, MicOff, Volume2, VolumeX, BarChart2,
+  Briefcase, MessageSquare, Calendar, TrendingUp,
+  ChevronRight, Globe, ArrowRight, RotateCcw, Loader2
+} from 'lucide-react'
 import { callGroq } from '../../lib/groq'
 
-const FREE_LIMIT = 999
-const STORAGE_KEY = 'genius_ai_count'
-const RESET_KEY = 'genius_ai_date'
+// ─────────────────────────────────────────────────────────────────────────────
+// CONSTANTS
+// ─────────────────────────────────────────────────────────────────────────────
+const TABS = [
+  { id: 'chat',         icon: MessageSquare, label: 'Ask Anything',      color: 'text-blue-500',   bg: 'bg-blue-500'   },
+  { id: 'mock',         icon: Brain,         label: 'Mock Test',          color: 'text-purple-500', bg: 'bg-purple-500' },
+  { id: 'explain',      icon: FileText,      label: 'Explain Answer',     color: 'text-green-500',  bg: 'bg-green-500'  },
+  { id: 'studyplan',    icon: Calendar,      label: 'Study Plan',         color: 'text-orange-500', bg: 'bg-orange-500' },
+  { id: 'doubt',        icon: MessageSquare, label: 'Solve Doubt',        color: 'text-red-500',    bg: 'bg-red-500'    },
+  { id: 'career',       icon: Briefcase,     label: 'Career Roadmap',     color: 'text-yellow-500', bg: 'bg-yellow-500' },
+  { id: 'interview',    icon: Target,        label: 'Interview Prep',     color: 'text-indigo-500', bg: 'bg-indigo-500' },
+  { id: 'english',      icon: Mic,           label: 'English Practice',   color: 'text-pink-500',   bg: 'bg-pink-500'   },
+  { id: 'revision',     icon: BookOpen,      label: 'Revision Plan',      color: 'text-teal-500',   bg: 'bg-teal-500'   },
+  { id: 'currentaffairs',icon: TrendingUp,   label: 'Current Affairs',    color: 'text-cyan-500',   bg: 'bg-cyan-500'   },
+  { id: 'weakness',     icon: BarChart2,     label: 'Weakness Analyzer',  color: 'text-rose-500',   bg: 'bg-rose-500'   },
+]
 
-// ── Weakness Analyzer mentor questions ──────────────────────────────────────
 const WEAKNESS_QUESTIONS = [
-  "👋 Hello! I'm your personal exam mentor.\n\nTo analyze your weaknesses accurately, I'll ask you a few quick questions.\n\nFirst: Which exam are you preparing for?\n(e.g., APPSC Group-2, TSPSC Group-1, DSC, TET, Police...)",
-  "Great! Now tell me — which subjects do you find most difficult?\n(e.g., History, Polity, Maths, Science, Current Affairs...)",
-  "How many hours do you study per day on average?",
-  "Have you attempted any mock tests or previous papers? If yes, which topics did you score low in?",
-  "What is your biggest challenge while studying?\n(e.g., memory, time management, English medium, concepts...)",
+  'Which exam are you preparing for?\n(e.g. APPSC Group-2, TSPSC Group-1, DSC, TET, Police...)',
+  'Which subjects do you find most difficult?\n(e.g. History, Polity, Maths, Science, Current Affairs...)',
+  'How many hours do you study per day?',
+  'Have you taken any mock tests? Which topics did you score low in?',
+  'What is your biggest challenge while studying?\n(e.g. memory, time management, English medium, understanding concepts...)',
 ]
 
-const tabs = [
-  { id: 'chat', icon: MessageSquare, label: 'Ask Anything', color: 'text-blue-500' },
-  { id: 'mock', icon: Brain, label: 'Mock Test', color: 'text-purple-500' },
-  { id: 'explain', icon: FileText, label: 'Explain Answer', color: 'text-green-500' },
-  { id: 'studyplan', icon: Calendar, label: 'Study Plan', color: 'text-orange-500' },
-  { id: 'doubt', icon: MessageSquare, label: 'Solve Doubt', color: 'text-red-500' },
-  { id: 'career', icon: Briefcase, label: 'Career Roadmap', color: 'text-yellow-500' },
-  { id: 'interview', icon: Target, label: 'Interview Prep', color: 'text-indigo-500' },
-  { id: 'english', icon: Mic, label: 'English Practice', color: 'text-pink-500' },
-  { id: 'revision', icon: BookOpen, label: 'Revision Plan', color: 'text-teal-500' },
-  { id: 'currentaffairs', icon: TrendingUp, label: 'Current Affairs', color: 'text-cyan-500' },
-  { id: 'weakness', icon: BarChart2, label: 'Weakness Analyzer', color: 'text-rose-500' },
-]
-
-// ── Strip markdown symbols from AI response ─────────────────────────────────
-function stripMarkdown(text) {
+// ─────────────────────────────────────────────────────────────────────────────
+// PURE HELPERS  (no hooks — safe to call anywhere)
+// ─────────────────────────────────────────────────────────────────────────────
+function stripMd(text = '') {
   return text
     .replace(/\*\*(.*?)\*\*/g, '$1')
     .replace(/\*(.*?)\*/g, '$1')
-    .replace(/#{1,6}\s/g, '')
-    .replace(/`{1,3}(.*?)`{1,3}/gs, '$1')
+    .replace(/#{1,6}\s?/g, '')
+    .replace(/`{1,3}([^`]*)`{1,3}/gs, '$1')
     .replace(/_{1,2}(.*?)_{1,2}/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
     .trim()
 }
 
-// ── Detect language from text (script + romanized keywords) ─────────────────
-function detectLang(text) {
-  if (/[\u0C00-\u0C7F]/.test(text)) return 'te-IN'   // Telugu script
-  if (/[\u0900-\u097F]/.test(text)) return 'hi-IN'   // Hindi script
-  if (/[\u0600-\u06FF]/.test(text)) return 'ur-PK'   // Urdu
-  if (/[\u0B80-\u0BFF]/.test(text)) return 'ta-IN'   // Tamil
-  if (/[\u0D00-\u0D7F]/.test(text)) return 'ml-IN'   // Malayalam
-  if (/[\u0C80-\u0CFF]/.test(text)) return 'kn-IN'   // Kannada
-
-  // Romanized Telugu keyword detection
-  const lower = text.toLowerCase()
-  const teluguWords = ['cheppu', 'gurinchi', 'ante', 'undi', 'avutundi',
-    'cheyyi', 'cheyandi', 'meeru', 'mee', 'naaku', 'maku', 'ikkada',
-    'akkada', 'emi', 'ela', 'evaru', 'ekkada', 'unte', 'ledu', 'ayindi',
-    'chala', 'manchidi', 'pettandi', 'chudandi', 'telugu lo', 'lo cheppu']
-  if (teluguWords.some(w => lower.includes(w))) return 'te-IN'
-
-  // Romanized Hindi keyword detection
-  const hindiWords = ['batao', 'bolo', 'karo', 'mein batao', 'hain', 'kya hai',
-    'kaise', 'kyun', 'mujhe', 'aapko', 'samjhao', 'hindi mein']
-  if (hindiWords.some(w => lower.includes(w))) return 'hi-IN'
-
+function detectScript(text = '') {
+  if (/[\u0C00-\u0C7F]/.test(text)) return 'te-IN'
+  if (/[\u0900-\u097F]/.test(text)) return 'hi-IN'
+  if (/[\u0600-\u06FF]/.test(text)) return 'ur-PK'
+  if (/[\u0B80-\u0BFF]/.test(text)) return 'ta-IN'
+  if (/[\u0D00-\u0D7F]/.test(text)) return 'ml-IN'
+  if (/[\u0C80-\u0CFF]/.test(text)) return 'kn-IN'
+  const lo = text.toLowerCase()
+  const te = ['cheppu','gurinchi','ante ','undi ','avutundi','cheyyi','meeru ','naaku','ikkada','akkada','ledu','ayindi','manchidi','chudandi','lo cheppu','telugu lo','telugu mlo']
+  if (te.some(w => lo.includes(w))) return 'te-IN'
+  const hi = ['batao','bolo ','karo ','mein batao','samjhao','hindi mein','kyun ','kaise ']
+  if (hi.some(w => lo.includes(w))) return 'hi-IN'
   return 'en-US'
 }
 
-// ── System prompt ────────────────────────────────────────────────────────────
-function getSystemPrompt(tabId, detectedLang) {
-  const langInstr = detectedLang
-    ? `The student is communicating in "${detectedLang}". You MUST reply in the exact same language and script. If they wrote in Telugu, reply in Telugu script. If Hindi, reply in Devanagari. If English, reply in English. Never switch languages unless the student does.`
-    : `Auto-detect the student's language from their message and always reply in the same language and script.`
+function langOverrideFromKeywords(text = '') {
+  const lo = text.toLowerCase()
+  const wantTe = lo.includes('telugu') && (lo.includes('lo ') || lo.includes('mlo') || lo.includes('cheppu') || lo.includes('report') || lo.includes('give') || lo.includes('explain') || lo.includes('లో'))
+  const wantHi = lo.includes('hindi') && (lo.includes('mein') || lo.includes('report') || lo.includes('batao') || lo.includes('give') || lo.includes('explain'))
+  if (wantTe) return 'te-IN'
+  if (wantHi) return 'hi-IN'
+  return null
+}
 
-  const base = `You are Genius AI, a warm and encouraging personal exam mentor for students preparing for AP and Telangana state government exams (APPSC, TSPSC, AP Police, TS Police, DSC, TET, RRB, SSC). Speak like a knowledgeable friend and mentor — supportive, clear, and exam-focused. ${langInstr} Never use markdown symbols like **, ##, or backticks in your response.`
+function langLabel(code) {
+  const map = { 'te-IN': 'Telugu 🇮🇳', 'hi-IN': 'Hindi 🇮🇳', 'en-US': 'English', 'ur-PK': 'Urdu', 'ta-IN': 'Tamil', 'ml-IN': 'Malayalam', 'kn-IN': 'Kannada' }
+  return map[code] || code
+}
+
+function buildSystemPrompt(tabId, lang) {
+  const langRule = lang && lang !== 'en-US'
+    ? `CRITICAL LANGUAGE RULE: The student is using "${lang}". You MUST reply ENTIRELY in that language and script. Telugu → తెలుగు లిపి. Hindi → देवनागरी. Never mix languages. Never switch to English.`
+    : `Detect the student's language from their message and reply in the SAME language and script every time.`
+
+  const base = `You are Genius AI 🧠 — a warm, encouraging personal exam mentor for students preparing for Indian government exams: APPSC, TSPSC, AP Police, TS Police, DSC, TET, RRB, SSC. Be like a knowledgeable friend — supportive, clear, practical. ${langRule} NEVER use markdown symbols like **, ##, or backticks. Write in plain text only.`
 
   const extras = {
-    mock: 'Generate exactly 10 MCQ questions. Format each as:\nQ[N]. [Question]\nA) B) C) D) options\nAnswer: [letter]\nExplanation: [one sentence]\nMake questions relevant to APPSC Group-2 syllabus.',
-    explain: 'Explain the concept clearly with a simple example. Use analogies Indian students can relate to. Keep it concise.',
-    studyplan: 'Create a practical day-wise study plan with subject names, topics, hours per day, and weekly revision.',
-    doubt: 'Answer the doubt clearly with examples. Give the correct answer with explanation.',
-    career: 'Give a step-by-step career roadmap with realistic timelines, eligibility, exam stages, and preparation tips.',
-    interview: 'Generate 10 interview questions with model answers. Focus on AP/TS history, current affairs, and administration.',
-    english: 'Provide English speaking practice with model sentences, common interview phrases, and pronunciation tips.',
-    revision: 'Create a day-wise revision schedule with specific topics, time slots, and practice test recommendations.',
-    currentaffairs: 'Provide 10 important current affairs for APPSC/TSPSC. Cover National, AP State, TS State, Economy, Science, Sports, Awards. Use numbered list.',
-    weakness: `You are a diagnostic exam mentor. The student has answered your questions about their preparation. Now give a PERSONALIZED weakness analysis.
-LANGUAGE RULE — This is the most important rule:
-- If the student says "telugu lo cheppu", "telugu లో చెప్పు", "give in telugu", "telugu report" or any variation → reply ENTIRELY in Telugu script (తెలుగు లిపి)
-- If the student says "hindi mein", "hindi report" → reply in Hindi (Devanagari)
-- If the student writes in Telugu script → reply in Telugu
-- If the student writes in Hindi script → reply in Hindi
-- Default → English
-Give personalized analysis:
-1. Identify their specific weak subjects based on their answers
-2. Explain WHY each subject is difficult for them personally
-3. Give 3 actionable improvement strategies for each weak area
-4. End with a motivational message in the same language`,
+    explain:      'Explain the given concept or answer clearly with a real-life example. Use analogies Indian students can relate to. Be concise and easy to understand.',
+    studyplan:    'Create a practical day-wise study plan. Include: subjects, specific topics, hours per day, weekly revision schedule. Make it realistic and motivating.',
+    doubt:        'Answer the student's doubt clearly. Give the correct answer with a step-by-step explanation and a helpful example.',
+    career:       'Give a detailed step-by-step career roadmap. Include: eligibility, exam stages, timeline, preparation strategy, important books/resources.',
+    interview:    'Generate 10 important interview questions for AP/TS government exams with ideal model answers. Focus on AP/TS history, governance, current affairs.',
+    english:      'Provide English speaking practice exercises. Include: model sentences, common interview phrases, pronunciation tips, confidence-building tips.',
+    revision:     'Create a focused day-wise revision plan. Include: specific topics per day, time slots, quick-review techniques, practice test schedule.',
+    currentaffairs: 'Give 10 important current affairs points relevant to APPSC/TSPSC exams. Cover: National, AP State, TS State, Economy, Science & Tech, Sports, Awards. Use numbered list with clear headings.',
+    weakness:     `You are a diagnostic exam mentor. The student has answered 5 diagnostic questions. Now give a PERSONALIZED weakness analysis.
+LANGUAGE RULE: If the student asked in Telugu or says "telugu lo cheppu" → reply ENTIRELY in Telugu script. If Hindi → Devanagari. Default → English.
+Your analysis must include:
+1. Identify their 3-5 specific weak areas based on their answers
+2. Explain WHY each area is difficult for them personally
+3. Give 3 specific, actionable improvement strategies for each weak area
+4. Create a simple 2-week action plan
+5. End with a strong motivational message
+Be specific to their answers — NOT generic advice.`,
   }
 
   return base + (extras[tabId] ? '\n\n' + extras[tabId] : '')
 }
 
 function getQuickPrompt(tabId) {
-  const prompts = {
-    studyplan: 'Create a detailed 90-day study plan for APPSC Group-2 exam with daily schedule, subject-wise time allocation, and important topics.',
-    career: 'Create a complete career roadmap for becoming an IAS/IPS officer from Andhra Pradesh with eligibility, timeline, exam stages, and preparation strategy.',
-    interview: 'Generate 10 important APPSC Group-2 interview questions with ideal model answers.',
-    english: 'Give me 5 English speaking exercises for government job interviews with model answers and tips to improve spoken English.',
-    revision: 'Create a 7-day revision plan for APPSC covering History, Polity, AP Economy, General Science, and Current Affairs with specific topics each day.',
-    currentaffairs: 'Give me 10 important current affairs points for this month relevant to APPSC and TSPSC exams. Cover National, AP State, TS State, Economy, Science, Sports, and Awards.',
-  }
-  return prompts[tabId]
+  return {
+    studyplan:      'Create a detailed 90-day study plan for APPSC Group-2 with daily schedule and subject-wise time allocation.',
+    career:         'Create a complete career roadmap for becoming an IAS/IPS officer from Andhra Pradesh — eligibility, timeline, exam stages, preparation strategy.',
+    interview:      'Generate 10 important APPSC Group-2 interview questions with ideal model answers focused on AP/TS governance and history.',
+    english:        'Give me 5 English speaking practice exercises for government job interviews with model answers and confidence-building tips.',
+    revision:       'Create a focused 7-day revision plan for APPSC covering History, Polity, AP Economy, General Science, and Current Affairs.',
+    currentaffairs: 'Give me 10 important current affairs for this month relevant to APPSC and TSPSC. Cover National, AP State, TS State, Economy, Science, Sports, Awards.',
+  }[tabId] || null
 }
 
-function getWelcomeMessage(tabId) {
-  const msgs = {
-    chat: '👋 Hello! I am Genius AI — your personal APPSC/TSPSC exam mentor!\n\nAsk me anything in any language — Telugu, Hindi, English, or any other language. I will reply in the same language!\n\n• Exam notifications\n• Study tips\n• Current affairs\n• Career guidance\n\n🎁 FREE for the first month — all features unlocked!',
-    mock: '📝 Mock Test\n\nClick the button below to go to the full interactive mock test with timer, instant feedback, and score tracking!\n\n🎁 FREE for first month!',
-    currentaffairs: "📰 Current Affairs Summarizer\n\nClick below to get this month's important current affairs for AP & TS exams!\n\nCovers: National • AP State • TS State • Economy • Science • Sports • Awards",
-    weakness: '👋 Hello! I am your personal exam mentor.\n\nTo analyze your weaknesses accurately, I will ask you a few quick questions first.\n\nWhich exam are you preparing for?\n(e.g., APPSC Group-2, TSPSC Group-1, DSC, TET, Police...)\n\n🎤 You can speak or type in any language!',
-  }
-  return msgs[tabId] || `Ready to help with ${tabs.find(t => t.id === tabId)?.label || ''}!\n\nType or speak your question in any language. I will reply in the same language!\n\n🎁 FREE for first month!`
+function getWelcome(tabId) {
+  return {
+    chat:           '👋 Hello! I am Genius AI — your personal APPSC/TSPSC exam mentor!\n\nAsk me anything in any language — Telugu, Hindi, English or any other. I will always reply in the same language!\n\n💡 Try asking:\n• "APPSC Group-2 exam pattern explain cheyyi"\n• "Current affairs for this month"\n• "How to prepare for Polity in 30 days"\n\n🎁 FREE for the first month!',
+    mock:           '📝 Interactive Mock Test\n\nClick the button below to start a full interactive mock test with:\n✅ Clickable options A/B/C/D\n⏱️ Live timer\n✅ Instant right/wrong feedback\n📊 Score & answer review\n\n🎁 FREE for first month!',
+    currentaffairs: '📰 Current Affairs\n\nClick the button to get this month\'s important current affairs for AP & TS exams!\n\nCovers:\n• National News\n• AP State News\n• TS State News\n• Economy & Finance\n• Science & Technology\n• Sports & Awards',
+    weakness:       '📊 Weakness Analyzer\n\nHello! I am your personal exam mentor. 👋\n\nI will ask you 5 quick questions to understand your preparation level. Then I will give you a personalized weakness analysis with exact strategies to improve.\n\nLet\'s start!\n\nWhich exam are you preparing for?\n(e.g. APPSC Group-2, TSPSC Group-1, DSC, TET, Police...)\n\n🎤 You can type or speak in any language!',
+  }[tabId] || `Ready to help with ${TABS.find(t => t.id === tabId)?.label || 'your preparation'}!\n\nType or speak your question in any language — Telugu, Hindi, or English.\n\n🎁 FREE for first month!`
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// COMPONENT
+// ─────────────────────────────────────────────────────────────────────────────
 export default function GeniusAI() {
-  const [activeTab, setActiveTab] = useState('chat')
-  const [messages, setMessages] = useState({})
-  const [input, setInput] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [isListening, setIsListening] = useState(false)
-  const [isSpeaking, setIsSpeaking] = useState(false)
-  const [speechEnabled, setSpeechEnabled] = useState(true)
-  const [detectedLang, setDetectedLang] = useState(null)
-  const [weaknessStep, setWeaknessStep] = useState(0)
-  const [weaknessAnswers, setWeaknessAnswers] = useState([])
+  // ── State ──────────────────────────────────────────────────────────────────
+  const [activeTab,       setActiveTab]       = useState('chat')
+  const [allMessages,     setAllMessages]     = useState({})   // { tabId: [{role,content}] }
+  const [input,           setInput]           = useState('')
+  const [loading,         setLoading]         = useState(false)
+  const [error,           setError]           = useState('')
+  const [isListening,     setIsListening]     = useState(false)
+  const [isSpeaking,      setIsSpeaking]      = useState(false)
+  const [voiceOn,         setVoiceOn]         = useState(true)
+  const [detectedLang,    setDetectedLang]    = useState(null)
+  const [weakStep,        setWeakStep]        = useState(0)
+  const [weakAnswers,     setWeakAnswers]     = useState([])
+  const [sidebarOpen,     setSidebarOpen]     = useState(false)
 
-  const bottomRef = useRef(null)
-  const chatRef = useRef(null)
+  // ── Refs ───────────────────────────────────────────────────────────────────
+  const chatEndRef    = useRef(null)
+  const chatBoxRef    = useRef(null)
+  const inputRef      = useRef(null)
   const recognitionRef = useRef(null)
-  const synthRef = useRef(window.speechSynthesis)
+  const synthRef      = useRef(typeof window !== 'undefined' ? window.speechSynthesis : null)
 
-  const currentTab = tabs.find(t => t.id === activeTab)
-  const currentMessages = messages[activeTab] || [
-    { role: 'assistant', content: getWelcomeMessage(activeTab) }
-  ]
+  const currentTab = TABS.find(t => t.id === activeTab)
+  const messages   = allMessages[activeTab] || [{ role: 'assistant', content: getWelcome(activeTab) }]
 
+  // ── Auto-scroll to bottom ──────────────────────────────────────────────────
   useEffect(() => {
-    if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight
-  }, [messages, activeTab, loading])
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, loading])
 
+  // ── Cancel speech & mic when tab changes ──────────────────────────────────
   useEffect(() => {
     synthRef.current?.cancel()
     setIsSpeaking(false)
-    stopListening()
-  }, [activeTab])
-
-  // ── Speech Output ─────────────────────────────────────────────────────────
-  const speak = useCallback((text, langOverride) => {
-    if (!speechEnabled || !window.speechSynthesis) return
-    synthRef.current.cancel()
-    const clean = stripMarkdown(text).slice(0, 500)
-    const utt = new SpeechSynthesisUtterance(clean)
-    const voices = synthRef.current.getVoices()
-    const langCode = langOverride || detectedLang || 'en-US'
-    const match = voices.find(v => v.lang.startsWith(langCode.split('-')[0]))
-    if (match) utt.voice = match
-    utt.lang = langCode
-    utt.rate = 0.95
-    utt.pitch = 1
-    utt.onstart = () => setIsSpeaking(true)
-    utt.onend = () => setIsSpeaking(false)
-    utt.onerror = () => setIsSpeaking(false)
-    synthRef.current.speak(utt)
-  }, [speechEnabled, detectedLang])
-
-  const stopSpeaking = () => {
-    synthRef.current?.cancel()
-    setIsSpeaking(false)
-  }
-
-  // ── Speech Input ──────────────────────────────────────────────────────────
-  const startListening = useCallback(() => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-    if (!SpeechRecognition) {
-      setError('Speech recognition not supported. Please use Chrome.')
-      return
-    }
-    stopSpeaking()
-    const recognition = new SpeechRecognition()
-    recognition.continuous = false
-    recognition.interimResults = false
-    recognition.lang = detectedLang || 'en-IN'
-    recognition.onstart = () => setIsListening(true)
-    recognition.onresult = (e) => {
-      const transcript = e.results[0][0].transcript
-      const lang = detectLang(transcript)
-      setDetectedLang(lang)
-      setInput(transcript)
-      setIsListening(false)
-      // ✅ Auto-send after speech
-      setTimeout(() => sendMessage(transcript), 300)
-    }
-    recognition.onerror = (e) => {
-      setIsListening(false)
-      if (e.error !== 'no-speech') setError('Mic error: ' + e.error)
-    }
-    recognition.onend = () => setIsListening(false)
-    recognitionRef.current = recognition
-    recognition.start()
-  }, [detectedLang])
-
-  const stopListening = () => {
     recognitionRef.current?.stop()
     setIsListening(false)
+    setSidebarOpen(false)
+    inputRef.current?.focus()
+  }, [activeTab])
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // SPEECH OUTPUT
+  // ─────────────────────────────────────────────────────────────────────────
+  const speak = useCallback((text, langCode) => {
+    if (!voiceOn || !synthRef.current) return
+    synthRef.current.cancel()
+    const clean = stripMd(text).slice(0, 600)
+    if (!clean) return
+    const utt = new SpeechSynthesisUtterance(clean)
+    const targetLang = langCode || detectedLang || 'en-US'
+    utt.lang  = targetLang
+    utt.rate  = 0.92
+    utt.pitch = 1.0
+    // Try to find a matching voice
+    const voices = synthRef.current.getVoices()
+    const langPrefix = targetLang.split('-')[0]
+    const match = voices.find(v => v.lang === targetLang)
+               || voices.find(v => v.lang.startsWith(langPrefix))
+    if (match) utt.voice = match
+    utt.onstart = () => setIsSpeaking(true)
+    utt.onend   = () => setIsSpeaking(false)
+    utt.onerror = () => setIsSpeaking(false)
+    synthRef.current.speak(utt)
+  }, [voiceOn, detectedLang])
+
+  const stopSpeak = () => { synthRef.current?.cancel(); setIsSpeaking(false) }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // SPEECH INPUT
+  // ─────────────────────────────────────────────────────────────────────────
+  const startListen = useCallback(() => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SR) { setError('Speech recognition requires Chrome browser.'); return }
+    stopSpeak()
+    const rec = new SR()
+    rec.continuous     = false
+    rec.interimResults = false
+    rec.lang           = detectedLang || 'en-IN'
+    rec.onstart  = () => setIsListening(true)
+    rec.onerror  = (e) => { setIsListening(false); if (e.error !== 'no-speech') setError('Mic error: ' + e.error) }
+    rec.onend    = () => setIsListening(false)
+    rec.onresult = (e) => {
+      const transcript = e.results[0][0].transcript.trim()
+      if (!transcript) return
+      const lang = detectScript(transcript)
+      setDetectedLang(lang)
+      setIsListening(false)
+      // Auto-send immediately after speech
+      doSend(transcript, lang)
+    }
+    recognitionRef.current = rec
+    rec.start()
+  }, [detectedLang])
+
+  const stopListen = () => { recognitionRef.current?.stop(); setIsListening(false) }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // ADD MESSAGE HELPER
+  // ─────────────────────────────────────────────────────────────────────────
+  function addMsg(tabId, msgs) {
+    setAllMessages(prev => ({ ...prev, [tabId]: msgs }))
   }
 
-  // ── Weakness Analyzer mentor flow ─────────────────────────────────────────
-  async function handleWeaknessFlow(userText) {
-    const step = weaknessStep
-    const answers = [...weaknessAnswers, userText]
-    setWeaknessAnswers(answers)
+  // ─────────────────────────────────────────────────────────────────────────
+  // WEAKNESS FLOW
+  // ─────────────────────────────────────────────────────────────────────────
+  async function handleWeakness(userText, currentLang) {
+    const step    = weakStep
+    const answers = [...weakAnswers, userText]
+    setWeakAnswers(answers)
+
+    const base    = allMessages['weakness'] || [{ role: 'assistant', content: getWelcome('weakness') }]
+    const withUser = [...base, { role: 'user', content: userText }]
 
     if (step < WEAKNESS_QUESTIONS.length - 1) {
+      // Ask next question
       const nextQ = WEAKNESS_QUESTIONS[step + 1]
-      setWeaknessStep(step + 1)
-      const newUserMsg = { role: 'user', content: userText }
-      const nextAiMsg = { role: 'assistant', content: nextQ }
-      setMessages(prev => ({
-        ...prev,
-        weakness: [...(prev.weakness || [{ role: 'assistant', content: getWelcomeMessage('weakness') }]), newUserMsg, nextAiMsg]
-      }))
-      if (speechEnabled) speak(nextQ)
+      setWeakStep(step + 1)
+      const updated = [...withUser, { role: 'assistant', content: nextQ }]
+      addMsg('weakness', updated)
+      if (voiceOn) speak(nextQ, currentLang)
     } else {
-      const newUserMsg = { role: 'user', content: userText }
-      const history = [
-        ...(messages.weakness || [{ role: 'assistant', content: getWelcomeMessage('weakness') }]),
-        newUserMsg
-      ]
-      setMessages(prev => ({ ...prev, weakness: history }))
+      // All 5 answers collected — send to AI
+      addMsg('weakness', withUser)
       setLoading(true)
+      const summary = `Student's diagnostic answers:
+Exam: ${answers[0] || 'Not specified'}
+Difficult subjects: ${answers[1] || 'Not specified'}
+Study hours/day: ${answers[2] || 'Not specified'}
+Mock test performance: ${answers[3] || 'Not specified'}
+Biggest challenge: ${answers[4] || 'Not specified'}
 
-      const summary = `The student answered my diagnostic questions:
-Q1 (Exam): ${answers[0] || ''}
-Q2 (Difficult subjects): ${answers[1] || ''}
-Q3 (Study hours/day): ${answers[2] || ''}
-Q4 (Mock test performance): ${answers[3] || ''}
-Q5 (Biggest challenge): ${answers[4] || ''}
-
-Now give a personalized weakness analysis based on these answers.`
-
+Based on these answers, give a detailed personalized weakness analysis.`
       try {
-        const systemPrompt = getSystemPrompt('weakness', detectedLang)
-        const reply = await callGroq(systemPrompt, [{ role: 'user', content: summary }])
-        const clean = stripMarkdown(reply)
-        // ✅ Detect language from AI reply for correct voice
-        const replyLang = detectLang(clean)
+        const reply = await callGroq(buildSystemPrompt('weakness', currentLang), [{ role: 'user', content: summary }])
+        const clean = stripMd(reply)
+        const replyLang = detectScript(clean)
         if (replyLang !== 'en-US') setDetectedLang(replyLang)
-        setMessages(prev => ({
-          ...prev,
-          weakness: [...history, { role: 'assistant', content: clean }]
-        }))
-        if (speechEnabled) speak(clean, replyLang !== 'en-US' ? replyLang : null)
+        addMsg('weakness', [...withUser, { role: 'assistant', content: clean }])
+        if (voiceOn) speak(clean, replyLang !== 'en-US' ? replyLang : currentLang)
       } catch (err) {
-        setError(`Error: ${err.message}`)
+        setError('AI error: ' + err.message)
+        addMsg('weakness', [...withUser, { role: 'assistant', content: 'Sorry, there was an error. Please try again.' }])
       }
       setLoading(false)
     }
   }
 
-  // ── Main send ─────────────────────────────────────────────────────────────
-  async function sendMessage(customPrompt) {
-    const userText = customPrompt || input.trim()
-    if (!userText) return
-
-    // ✅ Keyword-based language override + script detection
-    const lowerText = userText.toLowerCase()
-    if (lowerText.includes('telugu') &&
-       (lowerText.includes('report') || lowerText.includes('cheppu') ||
-        lowerText.includes('lo') || lowerText.includes('లో') ||
-        lowerText.includes('give') || lowerText.includes('explain'))) {
-      setDetectedLang('te-IN')
-    } else if (lowerText.includes('hindi') &&
-       (lowerText.includes('report') || lowerText.includes('mein') ||
-        lowerText.includes('batao') || lowerText.includes('give') ||
-        lowerText.includes('explain'))) {
-      setDetectedLang('hi-IN')
-    } else {
-      const lang = detectLang(userText)
-      if (lang !== 'en-US') setDetectedLang(lang)
-    }
-
-    setError('')
+  // ─────────────────────────────────────────────────────────────────────────
+  // MAIN SEND  (called from button, Enter key, speech, quick prompts)
+  // ─────────────────────────────────────────────────────────────────────────
+  async function doSend(textArg, langArg) {
+    const text = (textArg || input).trim()
+    if (!text || loading) return
     setInput('')
+    setError('')
 
-    // Mock Test tab → redirect to interactive mock test page
-    if (activeTab === 'mock' && !customPrompt) {
+    // Determine language
+    const kwLang   = langOverrideFromKeywords(text)
+    const scrLang  = detectScript(text)
+    const finalLang = kwLang || langArg || (scrLang !== 'en-US' ? scrLang : detectedLang) || null
+    if (finalLang) setDetectedLang(finalLang)
+
+    // Mock Test tab → go to dedicated page
+    if (activeTab === 'mock') {
       window.location.href = '/mock-tests'
       return
     }
 
-    // Weakness tab uses mentor flow
-    if (activeTab === 'weakness' && !customPrompt) {
-      await handleWeaknessFlow(userText)
+    // Weakness tab → mentor question flow
+    if (activeTab === 'weakness') {
+      await handleWeakness(text, finalLang)
       return
     }
 
-    const newUserMsg = { role: 'user', content: userText }
-    const updatedMessages = [...currentMessages, newUserMsg]
-    setMessages(prev => ({ ...prev, [activeTab]: updatedMessages }))
+    // All other tabs — normal chat
+    const base     = allMessages[activeTab] || [{ role: 'assistant', content: getWelcome(activeTab) }]
+    const withUser = [...base, { role: 'user', content: text }]
+    addMsg(activeTab, withUser)
     setLoading(true)
 
     try {
-      const systemPrompt = getSystemPrompt(activeTab, detectedLang)
-      const reply = await callGroq(systemPrompt, updatedMessages)
-      const clean = stripMarkdown(reply)
-      // ✅ Detect language from AI reply for correct voice output
-      const replyLang = detectLang(clean)
+      const sysPrompt = buildSystemPrompt(activeTab, finalLang)
+      // Only send last 10 messages to avoid token limits
+      const historyToSend = withUser.slice(-10)
+      const reply = await callGroq(sysPrompt, historyToSend)
+      const clean = stripMd(reply)
+      const replyLang = detectScript(clean)
       if (replyLang !== 'en-US') setDetectedLang(replyLang)
-      setMessages(prev => ({
-        ...prev,
-        [activeTab]: [...updatedMessages, { role: 'assistant', content: clean }]
-      }))
-      if (speechEnabled) speak(clean, replyLang !== 'en-US' ? replyLang : null)
+      const finalLangForSpeech = replyLang !== 'en-US' ? replyLang : finalLang
+      addMsg(activeTab, [...withUser, { role: 'assistant', content: clean }])
+      if (voiceOn) speak(clean, finalLangForSpeech)
     } catch (err) {
-      console.error('Genius AI error:', err)
-      setError(`Error: ${err.message}. Please check your Groq API key.`)
-      setMessages(prev => ({
-        ...prev,
-        [activeTab]: [...updatedMessages, { role: 'assistant', content: `Sorry, I encountered an error: ${err.message}` }]
-      }))
+      console.error(err)
+      const msg = err.message?.includes('API') ? 'API key error. Check your VITE_GROQ_API_KEY.' : 'Something went wrong. Please try again.'
+      setError(msg)
+      addMsg(activeTab, [...withUser, { role: 'assistant', content: 'Sorry, I encountered an error. Please try again.' }])
     }
     setLoading(false)
   }
 
-  function switchTab(tabId) {
-    setActiveTab(tabId)
-    setError('')
-    if (tabId === 'weakness') {
-      setWeaknessStep(0)
-      setWeaknessAnswers([])
-    }
-    setTimeout(() => {
-      if (chatRef.current) chatRef.current.scrollTop = 0
-    }, 50)
+  function handleKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend() }
   }
+
+  function switchTab(id) {
+    setActiveTab(id)
+    setError('')
+    if (id === 'weakness') { setWeakStep(0); setWeakAnswers([]) }
+  }
+
+  function resetChat() {
+    setAllMessages(prev => ({ ...prev, [activeTab]: [{ role: 'assistant', content: getWelcome(activeTab) }] }))
+    if (activeTab === 'weakness') { setWeakStep(0); setWeakAnswers([]) }
+    setError('')
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────────────────────────────────────
+  const quickPrompt = getQuickPrompt(activeTab)
 
   return (
     <Layout>
       <Helmet>
-        <title>Genius AI - Personal Exam Coach | AP TS Exam Hub</title>
-        <meta name="description" content="AI exam coach for APPSC TSPSC in any language. Free for first month!" />
+        <title>Genius AI — Personal Exam Mentor | AP TS Exam Hub</title>
+        <meta name="description" content="AI-powered personal exam mentor for APPSC, TSPSC exams. Supports Telugu, Hindi, English. Free for first month." />
       </Helmet>
 
-      {/* Hero */}
-      <section className="bg-gradient-to-br from-purple-900 via-primary-800 to-primary-600 text-white py-8 px-4">
+      {/* ── HERO ── */}
+      <section className="bg-gradient-to-br from-purple-900 via-blue-900 to-primary-700 text-white py-6 px-4">
         <div className="max-w-6xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 bg-white/20 px-4 py-1.5 rounded-full text-sm font-medium mb-3">
-            <Sparkles className="h-4 w-4" /> Powered by Groq AI — World's Fastest AI
+          <div className="inline-flex items-center gap-2 bg-white/20 backdrop-blur px-4 py-1.5 rounded-full text-xs font-semibold mb-3 uppercase tracking-wide">
+            <Sparkles className="h-3.5 w-3.5" /> Powered by Groq — World's Fastest AI
           </div>
-          <h1 className="text-3xl font-extrabold mb-1">Genius AI 🧠</h1>
-          <p className="text-blue-100 mb-1">Your Personal APPSC / TSPSC Exam Mentor</p>
-          <div className="inline-flex items-center gap-2 bg-green-500/30 border border-green-400/50 px-4 py-1.5 rounded-full text-sm font-semibold mt-1">
-            🌐 Speaks any language • 🎤 Voice input • 🔊 Voice output
+          <h1 className="text-3xl sm:text-4xl font-extrabold mb-1">Genius AI 🧠</h1>
+          <p className="text-blue-200 text-sm mb-3">Your Personal APPSC / TSPSC Exam Mentor</p>
+          <div className="flex flex-wrap justify-center gap-2 text-xs">
+            <span className="bg-white/15 px-3 py-1 rounded-full">🌐 Any language</span>
+            <span className="bg-white/15 px-3 py-1 rounded-full">🎤 Voice input</span>
+            <span className="bg-white/15 px-3 py-1 rounded-full">🔊 Voice output</span>
+            <span className="bg-green-500/40 border border-green-400/50 px-3 py-1 rounded-full font-semibold">🎁 FREE first month</span>
           </div>
         </div>
       </section>
 
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <div className="max-w-6xl mx-auto px-3 sm:px-6 py-4">
 
-        {/* Language status bar */}
-        <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-          <div className="flex items-center gap-2 text-sm text-gray-500">
-            <Globe className="h-4 w-4" />
-            <span>
-              {detectedLang
-                ? `Detected: ${detectedLang} — AI will reply in same language`
-                : 'Speak or type in any language — AI auto-detects!'}
-            </span>
+        {/* ── STATUS BAR ── */}
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+            <Globe className="h-3.5 w-3.5" />
+            {detectedLang
+              ? <span className="font-medium text-primary-600 dark:text-primary-400">Language: {langLabel(detectedLang)}</span>
+              : <span>Type or speak — AI auto-detects language</span>}
           </div>
-          <button
-            onClick={() => { setSpeechEnabled(v => !v); if (isSpeaking) stopSpeaking() }}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-medium transition-all ${speechEnabled ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-800'}`}
-          >
-            {speechEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
-            {speechEnabled ? 'Voice On' : 'Voice Off'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => { setVoiceOn(v => !v); if (isSpeaking) stopSpeak() }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${voiceOn ? 'bg-purple-50 border-purple-200 text-purple-700 dark:bg-purple-900/30 dark:border-purple-700 dark:text-purple-300' : 'bg-gray-100 border-gray-200 text-gray-500 dark:bg-gray-800 dark:border-gray-700'}`}>
+              {voiceOn ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
+              {voiceOn ? 'Voice On' : 'Voice Off'}
+            </button>
+            <button onClick={resetChat}
+              title="Clear chat"
+              className="p-1.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors border border-gray-200 dark:border-gray-700">
+              <RotateCcw className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
 
-        {/* Error banner */}
+        {/* ── ERROR ── */}
         {error && (
-          <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 text-sm">
-            ⚠️ {error}
+          <div className="mb-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 text-xs flex items-start gap-2">
+            <span className="flex-shrink-0 mt-0.5">⚠️</span>
+            <span>{error}</span>
+            <button onClick={() => setError('')} className="ml-auto flex-shrink-0 text-red-400 hover:text-red-600">✕</button>
           </div>
         )}
 
-        {/* Mobile tab strip */}
-        <div className="md:hidden mb-4">
-          <div className="flex gap-2 overflow-x-auto pb-2">
-            {tabs.map(tab => {
+        {/* ── MOBILE TAB STRIP ── */}
+        <div className="md:hidden mb-3 -mx-3 px-3">
+          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+            {TABS.map(tab => {
               const Icon = tab.icon
+              const active = activeTab === tab.id
               return (
                 <button key={tab.id} onClick={() => switchTab(tab.id)}
-                  className={`flex-shrink-0 flex flex-col items-center gap-1 px-3 py-2 rounded-xl text-xs font-medium transition-all ${activeTab === tab.id ? 'bg-primary-600 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}>
+                  className={`flex-shrink-0 flex flex-col items-center gap-1 px-3 py-2 rounded-xl text-xs font-medium transition-all min-w-[60px] ${active ? 'bg-primary-600 text-white shadow-md' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}>
                   <Icon className="h-4 w-4" />
-                  {tab.label.split(' ')[0]}
+                  <span className="text-[10px] leading-tight text-center">{tab.label.split(' ')[0]}</span>
                 </button>
               )
             })}
           </div>
         </div>
 
-        <div className="flex gap-5">
-          {/* Desktop Sidebar */}
-          <div className="hidden md:flex flex-col w-48 flex-shrink-0 gap-1">
-            {tabs.map(tab => {
+        <div className="flex gap-4">
+
+          {/* ── DESKTOP SIDEBAR ── */}
+          <aside className="hidden md:flex flex-col w-52 flex-shrink-0 gap-0.5">
+            <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide px-3 mb-2">AI Tools</p>
+            {TABS.map(tab => {
               const Icon = tab.icon
+              const active = activeTab === tab.id
               return (
                 <button key={tab.id} onClick={() => switchTab(tab.id)}
-                  className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left ${activeTab === tab.id ? 'bg-primary-600 text-white shadow-md' : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300'}`}>
-                  <Icon className={`h-4 w-4 flex-shrink-0 ${activeTab === tab.id ? 'text-white' : tab.color}`} />
-                  {tab.label}
+                  className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left w-full group ${active ? 'bg-primary-600 text-white shadow-md' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>
+                  <div className={`w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 ${active ? 'bg-white/20' : 'bg-gray-100 dark:bg-gray-700 group-hover:bg-gray-200 dark:group-hover:bg-gray-600'}`}>
+                    <Icon className={`h-3.5 w-3.5 ${active ? 'text-white' : tab.color}`} />
+                  </div>
+                  <span className="truncate">{tab.label}</span>
+                  {active && <ChevronRight className="h-3.5 w-3.5 ml-auto flex-shrink-0 opacity-70" />}
                 </button>
               )
             })}
-          </div>
+          </aside>
 
-          {/* Chat area */}
-          <div className="flex-1 card overflow-hidden flex flex-col" style={{ height: '560px' }}>
-            {/* Tab header */}
-            <div className="px-5 py-3 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between flex-shrink-0">
-              <div className="flex items-center gap-2">
-                {(() => { const Icon = currentTab.icon; return <Icon className={`h-5 w-5 ${currentTab.color}`} /> })()}
-                <h2 className="font-semibold">{currentTab.label}</h2>
-                {activeTab === 'weakness' && weaknessStep > 0 && weaknessStep < WEAKNESS_QUESTIONS.length && (
-                  <span className="text-xs text-gray-400 ml-1">Question {weaknessStep}/{WEAKNESS_QUESTIONS.length}</span>
-                )}
+          {/* ── CHAT PANEL ── */}
+          <div className="flex-1 min-w-0 flex flex-col card overflow-hidden" style={{ height: '600px' }}>
+
+            {/* Chat header */}
+            <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between flex-shrink-0 bg-white dark:bg-gray-900">
+              <div className="flex items-center gap-2.5">
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${activeTab === 'weakness' ? 'bg-rose-100 dark:bg-rose-900/30' : 'bg-purple-100 dark:bg-purple-900/30'}`}>
+                  {(() => { const Icon = currentTab.icon; return <Icon className={`h-4 w-4 ${currentTab.color}`} /> })()}
+                </div>
+                <div>
+                  <h2 className="font-semibold text-sm">{currentTab.label}</h2>
+                  {activeTab === 'weakness' && weakStep > 0 && weakStep < WEAKNESS_QUESTIONS.length && (
+                    <p className="text-xs text-gray-400">Question {weakStep + 1} of {WEAKNESS_QUESTIONS.length}</p>
+                  )}
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 {isSpeaking && (
-                  <button onClick={stopSpeaking}
-                    className="text-xs text-purple-600 bg-purple-100 dark:bg-purple-900/30 px-2 py-1 rounded-full animate-pulse">
-                    🔊 Stop
+                  <button onClick={stopSpeak}
+                    className="flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/30 px-2.5 py-1 rounded-full animate-pulse font-medium">
+                    <Volume2 className="h-3 w-3" /> Stop
                   </button>
                 )}
-                <span className="text-xs text-green-600 bg-green-100 dark:bg-green-900/30 dark:text-green-400 px-2 py-1 rounded-full font-medium">
+                <span className="text-xs text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900/30 px-2.5 py-1 rounded-full font-medium">
                   🎁 Free Month
                 </span>
               </div>
             </div>
 
-            {/* Messages */}
-            <div ref={chatRef} className="flex-1 overflow-y-auto p-4 space-y-4">
-              {currentMessages.map((m, i) => (
-                <div key={i} className={`flex gap-3 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                  <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${m.role === 'assistant' ? 'bg-purple-100 dark:bg-purple-900/30' : 'bg-primary-100 dark:bg-primary-900/30'}`}>
-                    {m.role === 'assistant' ? <Bot className="h-4 w-4 text-purple-600" /> : <User className="h-4 w-4 text-primary-600" />}
+            {/* Messages area */}
+            <div ref={chatBoxRef} className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-gray-950">
+              {messages.map((msg, i) => (
+                <div key={i} className={`flex gap-2.5 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                  {/* Avatar */}
+                  <div className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${msg.role === 'assistant' ? 'bg-purple-200 dark:bg-purple-800 text-purple-700 dark:text-purple-300' : 'bg-primary-600 text-white'}`}>
+                    {msg.role === 'assistant' ? '🧠' : 'U'}
                   </div>
-                  <div className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${m.role === 'assistant' ? 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100' : 'bg-primary-600 text-white'}`}>
-                    {m.content}
-                    {m.role === 'assistant' && i > 0 && (
-                      <button onClick={() => speak(m.content)}
-                        className="mt-2 flex items-center gap-1 text-xs text-gray-400 hover:text-purple-500 transition-colors">
+                  {/* Bubble */}
+                  <div className={`max-w-[78%] flex flex-col gap-1 ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                    <div className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words shadow-sm ${msg.role === 'assistant'
+                      ? 'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 rounded-tl-sm border border-gray-100 dark:border-gray-700'
+                      : 'bg-primary-600 text-white rounded-tr-sm'}`}>
+                      {msg.content}
+                    </div>
+                    {/* Listen button on AI messages */}
+                    {msg.role === 'assistant' && i > 0 && (
+                      <button onClick={() => speak(msg.content)}
+                        className="flex items-center gap-1 text-xs text-gray-400 hover:text-purple-500 dark:hover:text-purple-400 transition-colors px-1">
                         <Volume2 className="h-3 w-3" /> Listen
                       </button>
                     )}
                   </div>
                 </div>
               ))}
+
+              {/* Loading indicator */}
               {loading && (
-                <div className="flex gap-3">
-                  <div className="w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
-                    <Bot className="h-4 w-4 text-purple-600 animate-pulse" />
-                  </div>
-                  <div className="bg-gray-100 dark:bg-gray-800 px-4 py-3 rounded-2xl">
-                    <div className="flex gap-1 items-center">
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-                      <span className="text-xs text-gray-400 ml-2">Genius AI is thinking...</span>
+                <div className="flex gap-2.5">
+                  <div className="flex-shrink-0 w-7 h-7 rounded-full bg-purple-200 dark:bg-purple-800 flex items-center justify-center text-xs">🧠</div>
+                  <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 px-4 py-3 rounded-2xl rounded-tl-sm shadow-sm">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                      <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                      <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                      <span className="text-xs text-gray-400 ml-1">Genius AI is thinking...</span>
                     </div>
                   </div>
                 </div>
               )}
-              <div ref={bottomRef} />
+              <div ref={chatEndRef} />
             </div>
 
-            {/* Quick action buttons */}
+            {/* ── QUICK ACTION BUTTON ── */}
             {activeTab === 'mock' && (
-              <div className="px-4 py-2 border-t border-gray-100 dark:border-gray-800 flex-shrink-0">
+              <div className="px-4 py-2.5 border-t border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 flex-shrink-0">
                 <a href="/mock-tests"
-                  className="btn-primary text-sm py-2 w-full justify-center">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  📝 Go to Interactive Mock Test
+                  className="btn-primary text-sm py-2.5 w-full justify-center">
+                  <ArrowRight className="h-4 w-4" />
+                  Go to Interactive Mock Test →
                 </a>
               </div>
             )}
-            {getQuickPrompt(activeTab) && activeTab !== 'weakness' && activeTab !== 'mock' && (
-              <div className="px-4 py-2 border-t border-gray-100 dark:border-gray-800 flex-shrink-0">
-                <button onClick={() => sendMessage(getQuickPrompt(activeTab))}
+
+            {quickPrompt && activeTab !== 'mock' && activeTab !== 'weakness' && (
+              <div className="px-4 py-2.5 border-t border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 flex-shrink-0">
+                <button onClick={() => doSend(quickPrompt)}
                   disabled={loading}
-                  className="btn-primary text-sm py-2 disabled:opacity-50 w-full justify-center">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  {activeTab === 'studyplan' && '📅 Generate 90-Day Study Plan'}
-                  {activeTab === 'career' && '🎯 Generate Career Roadmap'}
-                  {activeTab === 'interview' && '💼 Generate Interview Questions'}
-                  {activeTab === 'english' && '🎤 Start English Practice'}
-                  {activeTab === 'revision' && '📚 Create 7-Day Revision Plan'}
-                  {activeTab === 'currentaffairs' && "📰 Get Today's Current Affairs"}
+                  className="btn-primary text-sm py-2.5 w-full justify-center disabled:opacity-50 disabled:cursor-not-allowed">
+                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                  {activeTab === 'studyplan'     && '📅 Generate 90-Day Study Plan'}
+                  {activeTab === 'career'        && '🎯 Generate Career Roadmap'}
+                  {activeTab === 'interview'     && '💼 Generate Interview Questions'}
+                  {activeTab === 'english'       && '🎤 Start English Practice'}
+                  {activeTab === 'revision'      && '📚 Create 7-Day Revision Plan'}
+                  {activeTab === 'currentaffairs'&& "📰 Get This Month's Current Affairs"}
                 </button>
               </div>
             )}
 
-            {/* Input area */}
-            <div className="p-4 border-t border-gray-100 dark:border-gray-800 flex-shrink-0">
-              <div className="flex gap-2">
+            {/* ── INPUT AREA ── */}
+            <div className="p-3 border-t border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 flex-shrink-0">
+              <div className="flex items-center gap-2">
+
+                {/* Mic button */}
                 <button
-                  onClick={isListening ? stopListening : startListening}
+                  onClick={isListening ? stopListen : startListen}
                   disabled={loading}
                   title={isListening ? 'Stop listening' : 'Speak in any language'}
-                  className={`flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center transition-all disabled:opacity-50 ${isListening
-                    ? 'bg-red-500 text-white animate-pulse'
-                    : 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400 hover:bg-purple-200'
-                    }`}>
+                  className={`flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center transition-all border ${
+                    isListening
+                      ? 'bg-red-500 border-red-500 text-white animate-pulse shadow-lg shadow-red-200'
+                      : 'bg-purple-50 border-purple-200 text-purple-600 dark:bg-purple-900/20 dark:border-purple-700 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-900/40'
+                  } disabled:opacity-40 disabled:cursor-not-allowed`}>
                   {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
                 </button>
+
+                {/* Text input */}
                 <input
-                  className="input flex-1 text-sm"
-                  placeholder={isListening ? '🎤 Listening... speak now' : 'Type or speak in any language...'}
+                  ref={inputRef}
                   value={input}
                   onChange={e => setInput(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && !e.shiftKey && !loading && sendMessage()}
+                  onKeyDown={handleKey}
                   disabled={loading}
+                  placeholder={
+                    isListening
+                      ? '🎤 Listening... speak now'
+                      : activeTab === 'weakness' && weakStep < WEAKNESS_QUESTIONS.length
+                      ? 'Type your answer...'
+                      : 'Type or speak in Telugu, Hindi, English...'
+                  }
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all disabled:opacity-60"
                 />
-                <button onClick={() => sendMessage()} disabled={loading || !input.trim()}
-                  className="btn-primary px-4 disabled:opacity-50 flex-shrink-0">
-                  <Send className="h-4 w-4" />
+
+                {/* Send button */}
+                <button
+                  onClick={() => doSend()}
+                  disabled={loading || !input.trim()}
+                  className="flex-shrink-0 w-10 h-10 rounded-xl bg-primary-600 hover:bg-primary-700 text-white flex items-center justify-center transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-sm">
+                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 </button>
               </div>
+
               {isListening && (
-                <p className="text-xs text-red-500 mt-1 text-center animate-pulse">
-                  🎤 Listening... speak in Telugu, Hindi, English or any language
+                <p className="text-xs text-red-500 dark:text-red-400 text-center mt-1.5 animate-pulse font-medium">
+                  🎤 Listening... speak in Telugu, Hindi or English
                 </p>
               )}
             </div>
           </div>
         </div>
 
-        {/* Pricing card */}
-        <div className="mt-6 card p-6 bg-gradient-to-br from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20">
+        {/* ── PRICING CARD ── */}
+        <div className="mt-5 card p-5 sm:p-6 bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-50 dark:from-purple-900/20 dark:via-blue-900/20 dark:to-indigo-900/20">
           <div className="flex flex-col md:flex-row items-center justify-between gap-5">
-            <div>
-              <h3 className="text-xl font-bold mb-1">After Free Month — Upgrade to Pro</h3>
-              <p className="text-gray-500 dark:text-gray-400 text-sm mb-3">Continue enjoying all 11 AI tools after the free period</p>
-              <ul className="grid grid-cols-2 gap-1.5 text-sm text-gray-600 dark:text-gray-300">
-                {['Unlimited AI messages', 'All 11 AI sections', 'Any language support', 'Unlimited mock tests', 'Personalized study plans', 'Priority support'].map(f => (
+            <div className="flex-1">
+              <h3 className="text-lg font-bold mb-1">After Free Month — Upgrade to Pro</h3>
+              <p className="text-gray-500 dark:text-gray-400 text-sm mb-3">Keep all 11 AI tools unlimited</p>
+              <ul className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-gray-600 dark:text-gray-300">
+                {['Unlimited AI messages', 'All 11 AI tools', 'Telugu + Hindi + English', 'Unlimited mock tests', 'Personalized study plans', 'Priority support'].map(f => (
                   <li key={f} className="flex items-center gap-1.5">
-                    <ChevronRight className="h-3.5 w-3.5 text-primary-500 flex-shrink-0" />{f}
+                    <span className="text-green-500 text-base">✓</span> {f}
                   </li>
                 ))}
               </ul>
             </div>
             <div className="text-center flex-shrink-0">
-              <p className="text-sm text-gray-400 line-through">₹399</p>
-              <p className="text-4xl font-extrabold text-primary-600">₹199</p>
+              <p className="text-sm text-gray-400 line-through">₹399/month</p>
+              <p className="text-5xl font-extrabold text-primary-600">₹199</p>
               <p className="text-gray-400 text-sm mb-3">/month after free trial</p>
-              <a href="/subscribe" className="btn-primary px-8 py-3 inline-flex">
+              <a href="/subscribe" className="btn-primary px-8 py-2.5 inline-flex text-sm">
                 View Plans
               </a>
             </div>
           </div>
         </div>
+
       </div>
     </Layout>
   )
