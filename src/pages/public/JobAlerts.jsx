@@ -9,11 +9,11 @@ const categories = ['All', 'APPSC', 'TSPSC', 'AP Police', 'TS Police', 'DSC', 'R
 const demoJobs = [
   { id: 1, title: 'APPSC Group-1 Recruitment 2026', organization: 'APPSC', vacancies: 503, last_date: '2026-08-15', salary: '₹40,000 - ₹1,20,000', category: 'APPSC', link: 'https://psc.ap.gov.in', location: 'Andhra Pradesh' },
   { id: 2, title: 'APPSC Group-2 Recruitment 2026', organization: 'APPSC', vacancies: 453, last_date: '2026-07-30', salary: '₹35,000 - ₹1,00,000', category: 'APPSC', link: 'https://psc.ap.gov.in', location: 'Andhra Pradesh' },
-  { id: 3, title: 'TSPSC Group-1 Services 2026', organization: 'TSPSC', vacancies: 500, last_date: '2026-07-15', salary: '₹40,000 - ₹1,20,000', category: 'TSPSC', link: 'https://tspsc.gov.in', location: 'Telangana' },
-  { id: 4, title: 'TSPSC Group-2 Recruitment 2026', organization: 'TSPSC', vacancies: 400, last_date: '2026-07-20', salary: '₹35,000 - ₹1,00,000', category: 'TSPSC', link: 'https://tspsc.gov.in', location: 'Telangana' },
+  { id: 3, title: 'TSPSC Group-1 Services 2026', organization: 'TSPSC', vacancies: 500, last_date: '2026-07-15', salary: '₹40,000 - ₹1,20,000', category: 'TSPSC', link: 'https://www.tspsc.gov.in', location: 'Telangana' },
+  { id: 4, title: 'TSPSC Group-2 Recruitment 2026', organization: 'TSPSC', vacancies: 400, last_date: '2026-07-20', salary: '₹35,000 - ₹1,00,000', category: 'TSPSC', link: 'https://www.tspsc.gov.in', location: 'Telangana' },
   { id: 5, title: 'AP Police SI Recruitment 2026', organization: 'AP Police', vacancies: 411, last_date: '2026-06-25', salary: '₹30,000 - ₹90,000', category: 'AP Police', link: 'https://slprb.ap.gov.in', location: 'Andhra Pradesh' },
   { id: 6, title: 'RRB NTPC Graduate Posts 2026', organization: 'RRB', vacancies: 11558, last_date: '2026-07-05', salary: '₹19,900 - ₹35,400', category: 'RRB', link: 'https://rrbsecunderabad.gov.in', location: 'All India' },
-  { id: 7, title: 'SSC CGL 2026', organization: 'SSC', vacancies: 17727, last_date: '2026-07-15', salary: '₹25,000 - ₹1,12,000', category: 'SSC', link: 'https://ssc.nic.in', location: 'All India' },
+  { id: 7, title: 'SSC CGL 2026', organization: 'SSC', vacancies: 17727, last_date: '2026-07-15', salary: '₹25,000 - ₹1,12,000', category: 'SSC', link: 'https://ssc.gov.in', location: 'All India' },
   { id: 8, title: 'AP DSC Teacher Recruitment 2026', organization: 'DSC', vacancies: 10000, last_date: '2026-08-30', salary: '₹28,000 - ₹80,000', category: 'DSC', link: 'https://apteachers.in', location: 'Andhra Pradesh' },
 ]
 

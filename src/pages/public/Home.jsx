@@ -50,7 +50,7 @@ const exams = [
     vacancies: '500+',
     color: 'from-purple-600 to-purple-800',
     icon: '🏢',
-    website: 'tgpsc.gov.in',
+    website: 'www.tspsc.gov.in',
     links: [
       { label: 'Mock Test', to: '/mock-tests' },
       { label: 'Previous Papers', to: '/previous-papers' },
@@ -67,7 +67,7 @@ const exams = [
     vacancies: '400+',
     color: 'from-violet-600 to-violet-800',
     icon: '📁',
-    website: 'tgpsc.gov.in',
+    website: 'www.tspsc.gov.in',
     links: [
       { label: 'Mock Test', to: '/mock-tests' },
       { label: 'Previous Papers', to: '/previous-papers' },
