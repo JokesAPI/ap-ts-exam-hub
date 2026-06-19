@@ -109,3 +109,28 @@ insert into mock_questions (test_id, question, option_a, option_b, option_c, opt
 ('appsc-gs-1', 'Article 356 of Indian Constitution is related to?', 'Emergency due to war', 'Financial Emergency', 'Presidents Rule in States', 'Fundamental Rights', 'C', 'Article 356 provides for the imposition of President Rule in a state when constitutional machinery fails.', 'Constitution');
 
 select 'Schema v2 created successfully!' as status;
+
+-- CONTACT MESSAGES
+create table if not exists contact_messages (
+  id uuid default gen_random_uuid() primary key,
+  name text not null,
+  email text not null,
+  subject text,
+  message text not null,
+  created_at timestamptz default now()
+);
+alter table contact_messages disable row level security;
+grant all on public.contact_messages to anon, authenticated;
+
+-- TEST REGISTRATIONS (collect student info before mock test)
+create table if not exists test_registrations (
+  id uuid default gen_random_uuid() primary key,
+  name text not null,
+  email text not null,
+  phone text,
+  state text,
+  exam_target text,
+  created_at timestamptz default now()
+);
+alter table test_registrations disable row level security;
+grant all on public.test_registrations to anon, authenticated;
