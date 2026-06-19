@@ -102,12 +102,26 @@ function getWelcomeMessage(tabId) {
 
 // ── Detect language from speech result ──────────────────────────────────────
 function detectLang(text) {
-  if (/[\u0C00-\u0C7F]/.test(text)) return 'te-IN'   // Telugu
-  if (/[\u0900-\u097F]/.test(text)) return 'hi-IN'   // Hindi
+  if (/[\u0C00-\u0C7F]/.test(text)) return 'te-IN'   // Telugu script
+  if (/[\u0900-\u097F]/.test(text)) return 'hi-IN'   // Hindi script
   if (/[\u0600-\u06FF]/.test(text)) return 'ur-PK'   // Urdu
   if (/[\u0B80-\u0BFF]/.test(text)) return 'ta-IN'   // Tamil
   if (/[\u0D00-\u0D7F]/.test(text)) return 'ml-IN'   // Malayalam
   if (/[\u0C80-\u0CFF]/.test(text)) return 'kn-IN'   // Kannada
+
+  // ✅ Romanized Telugu keyword detection
+  const lower = text.toLowerCase()
+  const teluguWords = ['cheppu', 'gurinchi', 'ante', 'undi', 'avutundi',
+    'cheyyi', 'cheyandi', 'meeru', 'mee', 'naaku', 'maku', 'ikkada',
+    'akkada', 'emi', 'ela', 'evaru', 'ekkada', 'unte', 'ledu', 'ayindi',
+    'chala', 'manchidi', 'pettandi', 'chudandi', 'telugu', 'lo cheppu']
+  if (teluguWords.some(w => lower.includes(w))) return 'te-IN'
+
+  // Romanized Hindi keyword detection
+  const hindiWords = ['batao', 'bolo', 'karo', 'mein', 'hain', 'hai',
+    'kya', 'kaise', 'kyun', 'mujhe', 'aapko', 'samjhao', 'hindi']
+  if (hindiWords.some(w => lower.includes(w))) return 'hi-IN'
+
   return 'en-US'
 }
 
