@@ -192,6 +192,7 @@ export default function GeniusAI() {
       setDetectedLang(lang)
       setInput(transcript)
       setIsListening(false)
+	  setTimeout(() => sendMessage(transcript), 300)
     }
 
     recognition.onerror = (e) => {
