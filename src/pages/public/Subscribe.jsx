@@ -74,17 +74,11 @@ export default function Subscribe() {
 
       // ── Step 2: Create order via Supabase Edge Function ─────────────────────
       // IMPORTANT: Order creation on server, not client
-      const orderRes = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-order`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          },
-          body: JSON.stringify({ amount, plan: selectedPlan, user_id: user.id }),
-        }
-      )
+      const orderRes = await fetch('/api/create-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount, plan: selectedPlan, user_id: user.id }),
+      })
 
       if (!orderRes.ok) {
         const err = await orderRes.json()
@@ -110,23 +104,17 @@ export default function Subscribe() {
           // ── Step 4: Verify payment SERVER-SIDE via Edge Function ─────────────
           // NEVER update database here directly -- always verify on server
           try {
-            const verifyRes = await fetch(
-              `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/verify-payment`,
-              {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-                },
-                body: JSON.stringify({
-                  razorpay_order_id:   response.razorpay_order_id,
-                  razorpay_payment_id: response.razorpay_payment_id,
-                  razorpay_signature:  response.razorpay_signature,
-                  user_id:             user.id,
-                  plan:                selectedPlan,
-                }),
-              }
-            )
+            const verifyRes = await fetch('/api/verify-payment', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                razorpay_order_id:   response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature:  response.razorpay_signature,
+                user_id:             user.id,
+                plan:                selectedPlan,
+              }),
+            })
 
             const result = await verifyRes.json()
 
