@@ -92,14 +92,6 @@ class Supa:
             raise RuntimeError(f'insert into {table} failed ({r.status_code}): {r.text}')
         return r.json()[0] if returning else None
 
-    def upsert(self, table: str, row: dict, on_conflict: str):
-        h = dict(self.headers)
-        h['Prefer'] = 'resolution=merge-duplicates'
-        r = requests.post(f'{self.base}/{table}?on_conflict={on_conflict}',
-                          headers=h, json=row, timeout=30)
-        if not r.ok:
-            raise RuntimeError(f'upsert into {table} failed ({r.status_code}): {r.text}')
-
     def update(self, table: str, filters: str, patch: dict):
         r = requests.patch(f'{self.base}/{table}?{filters}',
                            headers=self.headers, json=patch, timeout=30)
@@ -397,19 +389,22 @@ def create_draft(supa: Supa, item: dict, meta: dict) -> tuple:
 
 # ═════════════════════════ Run logging (Task 3) ═════════════════════════════
 
-def start_run(supa: Supa) -> str:
-    run = supa.insert('automation_runs', {
-        'source_name': SOURCE_NAME,
-        'connector_type': CONNECTOR_TYPE,
-        'started_at': datetime.now(timezone.utc).isoformat(),
-    }, returning=True)
-    # Ensure the source exists in automation_sources (idempotent)
-    supa.upsert('automation_sources', {
-        'name': SOURCE_NAME,
-        'source_type': CONNECTOR_TYPE,
-        'url': RSS_FEED_URL,
-    }, on_conflict='name')
-    return run['id']
+def start_run(supa: Supa) -> Optional[str]:
+    """Atomically acquires the run via begin_automation_run() (migration
+    20260707161420): a DB-side advisory lock serializes concurrent callers,
+    stale unfinished runs past the timeout are closed as failed, the run row
+    is inserted, and the source is registered in automation_sources — all in
+    one transaction. Returns the run id, or None if another live run for
+    this source is already in flight (caller must exit without working).
+    This guard lives in the database so EVERY execution path is protected:
+    the GitHub Actions scheduler, workflow_dispatch manual runs, and local
+    manual runs alike."""
+    return supa.rpc('begin_automation_run', {
+        'p_source_name': SOURCE_NAME,
+        'p_connector_type': CONNECTOR_TYPE,
+        'p_source_url': RSS_FEED_URL,
+        'p_stale_after_minutes': 30,
+    })
 
 
 def finish_run(supa: Supa, run_id: str, stats: dict):
@@ -430,8 +425,8 @@ def finish_run(supa: Supa, run_id: str, stats: dict):
         # records_rejected column not migrated yet — log without it
         patch.pop('records_rejected', None)
         supa.update('automation_runs', f'id=eq.{run_id}', patch)
-    # Source stats. Read-then-write increment: acceptable because this
-    # collector runs as a single scheduled job (no concurrent writers).
+    # Source stats. Read-then-write increment: safe because
+    # begin_automation_run() guarantees at most one live run per source.
     src = supa.select_one('automation_sources', f'name=eq.{SOURCE_NAME}',
                           'total_drafted')
     supa.update('automation_sources', f'name=eq.{SOURCE_NAME}', {
@@ -470,6 +465,13 @@ def main():
     run_id = None
     if not args.dry_run:
         run_id = start_run(supa)
+        if run_id is None:
+            # Concurrency guard: another live run owns this source right now.
+            # Exit 0 — this is expected coordination, not a failure, and the
+            # in-flight run already carries the automation_runs log entry.
+            print('Another run for this source is already in progress — '
+                  'exiting cleanly (concurrency guard, begin_automation_run).')
+            return
         print(f'automation_runs id: {run_id}\n')
 
     try:

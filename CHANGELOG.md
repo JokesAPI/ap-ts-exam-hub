@@ -2,6 +2,51 @@
 
 ## [Unreleased] — v2-development
 
+### 2026-07-07 — Automated daily scheduler (GitHub Actions) + DB concurrency guard
+
+**Added**
+- `.github/workflows/current-affairs-daily.yml`: runs the existing collector
+  every morning (06:30 IST) and on demand (`workflow_dispatch` with `count`
+  and `dry_run` inputs). Workflow-level concurrency group, 15-minute
+  timeout, one automatic retry (safe — dedup is idempotent by source_hash),
+  and failure notification via a deduplicated GitHub issue plus GitHub's
+  built-in failure email. Requires three Actions secrets: `GROQ_API_KEY`,
+  `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (see docs).
+- Migration `20260707161420_begin_automation_run_concurrency_guard`
+  (applied to production, md5-verified copy in `supabase/migrations/`):
+  new `begin_automation_run()` RPC — advisory-lock serialization per
+  source, stale-run sweep (unfinished > 30 min → closed as failed), NULL
+  when a live run is in flight, run-row insert + source registration in one
+  transaction. `service_role` execute only (revoked from public/anon/
+  authenticated). Rollback SQL included.
+- `docs/AUTOMATION_SCHEDULER.md`: scheduler comparison (GitHub Actions vs
+  Vercel Cron vs Supabase Scheduled Functions vs external cron), decision
+  rationale, requirement→mechanism map, setup, failure playbook, rollback.
+
+**Changed**
+- `scripts/generate_current_affairs_v2.py`: `start_run()` now acquires the
+  run atomically via `begin_automation_run()` and `main()` exits cleanly
+  (code 0, zero side effects) when another run holds the lock. Removed the
+  now-dead `Supa.upsert()` helper (source registration moved into the RPC)
+  and corrected the stale "no concurrent writers" comment. No other
+  pipeline behavior changed.
+- Removed the accidentally committed `scripts/__pycache__/*.pyc` and added
+  `__pycache__/` to `.gitignore` (it would have gone stale with this edit).
+
+**Fixed**
+- Concurrency hole: overlapping executions (scheduled + manual) could race
+  `check_duplicate_draft()` and produce duplicate drafts; now impossible at
+  the database layer for every execution path.
+- Deadlock-by-crash: a killed run left `finished_at NULL` forever; the
+  stale sweep now closes such runs as failed.
+
+**Security**
+- Service-role key lives only in GitHub encrypted Actions secrets (its
+  sanctioned server-side home). `begin_automation_run` is not callable by
+  anon or authenticated (verified via `has_function_privilege` in
+  production). Workflow permissions minimized (`contents: read`,
+  `issues: write`).
+
 ### 2026-07-07 — Fix: bulk archive (constraint + audit-log correctness)
 
 **Fixed**
