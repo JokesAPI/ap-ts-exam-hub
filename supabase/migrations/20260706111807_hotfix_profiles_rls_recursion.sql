@@ -1,0 +1,1 @@
+drop policy if exists "profiles_select_admin" on profiles;
