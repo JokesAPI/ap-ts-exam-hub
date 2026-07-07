@@ -1,0 +1,61 @@
+-- ROLLBACKS for the four 2026-07-06 security migrations.
+-- All four are SECURITY-GATED: automatic reversal would reintroduce
+-- known, exploited-in-testing vulnerabilities. Read each section.
+
+-- ═══════════════════════════════════════════════════════════════════
+-- ROLLBACK for 20260706111807_hotfix_profiles_rls_recursion
+-- Forward migration: dropped policy "profiles_select_admin" on profiles.
+-- That policy caused INFINITE RLS RECURSION (profiles policy querying
+-- profiles). Restoring it re-breaks every profiles read.
+-- ROLLBACK = INTENTIONAL NO-OP.
+-- If an admin-can-read-all-profiles capability is needed later, implement
+-- it with a security-definer helper function, never a self-referencing
+-- policy. Original (broken) policy preserved for the record:
+--
+-- DANGER — recreates infinite recursion:
+-- create policy "profiles_select_admin" on profiles for select
+-- to authenticated
+-- using (exists (select 1 from profiles p where p.id = auth.uid() and p.is_admin = true));
+
+-- ═══════════════════════════════════════════════════════════════════
+-- ROLLBACK for 20260706111242_security_fix_admin_identity_check
+-- This migration was a byte-identical re-apply of 20260706063018
+-- (same function bodies, same grants). Rolling back 111242 alone
+-- changes nothing.
+-- ROLLBACK = NO-OP. Only delete its row from schema_migrations.
+
+-- ═══════════════════════════════════════════════════════════════════
+-- ROLLBACK for 20260706063018_security_fix_admin_identity_check
+-- Forward migration added `p_admin_id must match auth.uid()` checks to
+-- approve/reject/publish_draft (closing the admin-identity SPOOFING hole
+-- found during the concurrent-session incident) and re-granted execute.
+--
+-- Safe partial rollback (below, active): revoke the grants, returning to
+-- the locked-down state of 20260706010333. The hardened function bodies
+-- are strictly safer than the originals, so they stay.
+--
+-- revoke execute on function approve_draft(uuid, uuid, text) from authenticated;
+-- revoke execute on function reject_draft(uuid, uuid, text) from authenticated;
+-- revoke execute on function publish_draft(uuid, uuid) from authenticated;
+-- revoke execute on function validate_draft(uuid) from authenticated;
+-- revoke execute on function check_duplicate_draft(text, text, text, text) from authenticated;
+--
+-- (Left commented so running this file top-to-bottom is a no-op by
+-- default; uncomment the five revokes to actually lock the pipeline.)
+--
+-- DANGER — restoring the ORIGINAL function bodies without the
+-- auth.uid() identity check reopens admin-identity spoofing.
+-- Those originals live in 20260705162849; do not restore them.
+
+-- ═══════════════════════════════════════════════════════════════════
+-- ROLLBACK for 20260706010333_emergency_lockdown_predating_draft_functions
+-- Forward migration revoked execute on the five draft functions from
+-- public/anon/authenticated during the incident.
+-- Reversal = re-granting execute. Grants to `authenticated` were later
+-- legitimately restored by 20260706063018 WITH the identity check in
+-- place, so the current grant state is already the intended end state.
+-- ROLLBACK = NO-OP in practice.
+--
+-- DANGER — never re-grant to anon or public:
+-- grant execute on function publish_draft(uuid, uuid) to anon;      -- NO
+-- grant execute on function validate_draft(uuid) to public;          -- NO
