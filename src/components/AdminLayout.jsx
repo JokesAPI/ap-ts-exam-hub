@@ -1,10 +1,11 @@
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { BookOpen, LayoutDashboard, Bell, FileText, Newspaper, FileArchive, LogOut } from 'lucide-react'
+import { BookOpen, LayoutDashboard, Bell, FileText, Newspaper, FileArchive, Bot, LogOut } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const adminLinks = [
   { to: '/admin', icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/admin/drafts', icon: Bot, label: 'AI Drafts' },
   { to: '/admin/notifications', icon: Bell, label: 'Notifications' },
   { to: '/admin/exams', icon: FileText, label: 'Exams' },
   { to: '/admin/current-affairs', icon: Newspaper, label: 'Current Affairs' },
