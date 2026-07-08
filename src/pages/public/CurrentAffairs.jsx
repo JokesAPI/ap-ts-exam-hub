@@ -1,21 +1,55 @@
 import { useEffect, useState } from 'react'
 import { Helmet } from 'react-helmet-async'
-import { Newspaper, Search } from 'lucide-react'
+import { Newspaper, Search, Bookmark } from 'lucide-react'
 import Layout from '../../components/Layout'
 import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../context/AuthContext'
+import toast from 'react-hot-toast'
 
 const categories = ['All', 'National', 'State AP', 'State TS', 'Economy', 'Science & Tech', 'Sports', 'Awards', 'International']
 
 export default function CurrentAffairs() {
+  const { user } = useAuth()
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [cat, setCat] = useState('All')
+  const [bookmarked, setBookmarked] = useState({}) // { [article_id]: bookmark_id }
 
   useEffect(() => {
     supabase.from('current_affairs').select('*').order('published_date', { ascending: false })
       .then(({ data }) => { setItems(data || []); setLoading(false) })
   }, [])
+
+  // Load this user's current-affairs bookmarks (RLS: own rows only)
+  useEffect(() => {
+    if (!user) { setBookmarked({}); return }
+    supabase.from('bookmarks').select('id, item_id')
+      .eq('user_id', user.id).eq('item_type', 'current_affairs')
+      .then(({ data }) => {
+        const map = {}
+        for (const b of data || []) map[b.item_id] = b.id
+        setBookmarked(map)
+      })
+  }, [user])
+
+  async function toggleBookmark(articleId) {
+    if (!user) { toast('Login to bookmark articles'); return }
+    const existingId = bookmarked[articleId]
+    if (existingId) {
+      const { error } = await supabase.from('bookmarks').delete().eq('id', existingId)
+      if (error) { toast.error('Could not remove bookmark'); return }
+      setBookmarked(prev => { const n = { ...prev }; delete n[articleId]; return n })
+      toast.success('Bookmark removed')
+    } else {
+      const { data, error } = await supabase.from('bookmarks')
+        .insert([{ user_id: user.id, item_type: 'current_affairs', item_id: articleId }])
+        .select('id').single()
+      if (error) { toast.error('Could not save bookmark'); return }
+      setBookmarked(prev => ({ ...prev, [articleId]: data.id }))
+      toast.success('Bookmarked! See it on your dashboard.')
+    }
+  }
 
   const filtered = items.filter(a =>
     (cat === 'All' || a.category === cat) &&
@@ -59,6 +93,10 @@ export default function CurrentAffairs() {
                 <div className="flex items-center gap-2 mb-2">
                   {a.category && <span className="badge bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">{a.category}</span>}
                   <span className="text-xs text-gray-400">{a.published_date ? new Date(a.published_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : ''}</span>
+                  <button onClick={() => toggleBookmark(a.id)} title={bookmarked[a.id] ? 'Remove bookmark' : 'Bookmark this article'}
+                    className={`ml-auto p-1.5 rounded-lg transition-colors ${bookmarked[a.id] ? 'text-primary-600 bg-primary-50 dark:bg-primary-900/20' : 'text-gray-400 hover:text-primary-600 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>
+                    <Bookmark className={`h-4 w-4 ${bookmarked[a.id] ? 'fill-current' : ''}`} />
+                  </button>
                 </div>
                 <h3 className="font-semibold text-base mb-1">{a.title}</h3>
                 {a.content && <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">{a.content}</p>}

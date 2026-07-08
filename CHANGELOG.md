@@ -2,6 +2,39 @@
 
 ## [Unreleased] — v2-development
 
+### 2026-07-08 — Student Dashboard completion (Priority 1) + P0 mock_results fix
+
+**Fixed (P0)**
+- Mock test results were **never saved in production**: `MockTestEngine.jsx`
+  inserts `test_title, marks, percentage, accuracy, subject_stats`, but the
+  columns didn't exist, so every insert failed silently (0 rows verified).
+  Migration `20260708053000_dashboard_mock_results_columns_and_leaderboard`
+  (applied to production, verified) adds the columns — the existing engine
+  insert now works with no engine code change. Rollback SQL included.
+- Removed the hardcoded fake "Quiz Streak: 3 days" stat from the dashboard.
+
+**Added**
+- Student Dashboard (`/dashboard`) completed: Progress stats (tests/avg/
+  best/plan), Continue Study (re-launch last test + quick actions),
+  Performance Trend chart (dependency-free inline SVG), Weak Subject
+  Analysis (aggregated `subject_stats`), Mock Test History (20 rows with
+  accuracy/time), Subscription Status card (`pro_expires_at`), Leaderboard,
+  Bookmarks, Latest Current Affairs. Fully responsive; reuses existing
+  `card`/`badge`/`btn-*` utilities, `Layout`, and toast.
+- `get_leaderboard(limit_count)` RPC — SECURITY DEFINER cross-user
+  aggregate (RLS on `mock_results` correctly blocks client-side
+  leaderboards). Returns abbreviated names + averages only; execute
+  granted to `authenticated` only (anon revoked, verified).
+- Bookmark toggle on Current Affairs cards — first producer for the
+  previously unused `bookmarks` table (own-rows RLS already in place).
+- Index `idx_mock_results_user_created (user_id, created_at desc)`.
+- `docs/STUDENT_DASHBOARD.md` — audit findings, data sources, security
+  review, rollback caveat.
+
+**Security**
+- No RLS bypassed or modified; all reads are own-row except the
+  locked-down leaderboard RPC. No service-role usage in frontend.
+
 ### 2026-07-07 — Automated daily scheduler (GitHub Actions) + DB concurrency guard
 
 **Added**
