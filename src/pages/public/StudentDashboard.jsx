@@ -9,6 +9,7 @@ import {
   PlayCircle, Trash2, ChevronRight
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { loadSession } from '../../lib/testSession'
 import toast from 'react-hot-toast'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -200,6 +201,26 @@ export default function StudentDashboard() {
 
         {/* ── Continue Study ── */}
         <h2 className="font-bold text-lg mb-4">Continue Study</h2>
+        {(() => {
+          const unfinished = loadSession()
+          if (!unfinished) return null
+          return (
+            <div className="card p-4 mb-4 flex items-center justify-between flex-wrap gap-3 border-2 border-yellow-200 dark:border-yellow-800/60 bg-yellow-50/50 dark:bg-yellow-900/10">
+              <div className="flex items-center gap-3">
+                <PlayCircle className="h-8 w-8 text-yellow-600 flex-shrink-0" />
+                <div>
+                  <p className="font-semibold text-sm">Unfinished: {unfinished.testTitle}</p>
+                  <p className="text-xs text-gray-500">{Object.keys(unfinished.answers || {}).length}/{unfinished.questions.length} answered — resume where you left off</p>
+                </div>
+              </div>
+              <button
+                onClick={() => navigate('/mock-test/start', { state: { testId: unfinished.testId, title: unfinished.testTitle } })}
+                className="btn-primary text-sm py-2">
+                Resume Test <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          )
+        })()}
         {lastTest && (
           <div className="card p-4 mb-4 flex items-center justify-between flex-wrap gap-3 border-2 border-primary-100 dark:border-primary-900/40">
             <div className="flex items-center gap-3">

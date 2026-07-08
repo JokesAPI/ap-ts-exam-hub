@@ -2,6 +2,41 @@
 
 ## [Unreleased] — v2-development
 
+### 2026-07-08 — Mock Test Improvements (Priority 2)
+
+**Added**
+- Resume interrupted tests: in-progress exam sessions (answers, question
+  order, time left) persist via new shared `src/lib/testSession.js`
+  (localStorage, 24h expiry, cleared on submit) with a Resume/Start Fresh
+  screen in the engine. Resume entry points on `/mock-tests` (banner with
+  Discard) and the dashboard's Continue Study section.
+- Result screen: rank prediction card via the **existing** `get_test_rank`
+  RPC (reused, not duplicated); Previous Attempts card with delta vs last
+  attempt; subject-wise "+N% vs your avg" historical badges; personalized
+  next-test recommendation driven by weakest subject (new
+  `SUBJECT_TO_TEST`/`TEST_TITLES` maps in `src/lib/questions.js`);
+  "Review Wrong (N)" quick action.
+- Answer review filters (All/Wrong/Skipped/Correct) with counts, preserved
+  question numbering, and empty states.
+- Skeleton loading for the engine and result side-cards; icon-only nav
+  buttons + scrollable question palette on mobile.
+- Migration `20260708113000_codify_get_test_rank_rpc`: codifies the
+  production `get_test_rank` definition into the repo (it existed in
+  production but was missing from migrations — source-of-truth gap).
+  Safe no-op re-apply, executed against production; rollback included.
+  No new DB objects, columns, or policy changes.
+
+**Fixed**
+- Same-route test switching (recommendation button) now resets state and
+  loads the correct question bank via a `testId`-change effect instead of
+  a stale closure.
+
+**Security**
+- No RLS/RPC modifications. Previous-attempt reads use `mock_results_own`.
+  `get_test_rank` verified: SECURITY DEFINER, pinned search_path, anon
+  execute revoked, aggregate-only output. Free-test paywall accounting
+  unchanged (resume never double-counts).
+
 ### 2026-07-08 — Student Dashboard completion (Priority 1) + P0 mock_results fix
 
 **Fixed (P0)**

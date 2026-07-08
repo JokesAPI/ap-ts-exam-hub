@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { Helmet } from 'react-helmet-async'
+import { useNavigate } from 'react-router-dom'
 import Layout from '../../components/Layout'
-import { FileText, Clock, Users, Lock, CheckCircle, Star, ArrowRight, RotateCcw, Trophy, XCircle, ChevronRight, Loader } from 'lucide-react'
+import { FileText, Clock, Users, Lock, CheckCircle, Star, ArrowRight, RotateCcw, Trophy, XCircle, ChevronRight, Loader, PlayCircle } from 'lucide-react'
 import { callGroq } from '../../lib/groq'
+import { loadSession, clearSession } from '../../lib/testSession'
 
 const FREE_MOCK_LIMIT = 2
 const MOCK_KEY = 'mock_tests_used'
@@ -54,6 +56,7 @@ function scoreColor(pct) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function MockTests() {
+  const navigate = useNavigate()
   const [screen, setScreen] = useState('list')   // list | loading | quiz | result
   const [selectedTest, setSelectedTest] = useState(null)
   const [questions, setQuestions] = useState([])
@@ -63,8 +66,11 @@ export default function MockTests() {
   const [timeLeft, setTimeLeft] = useState(0)
   const [showPaywall, setShowPaywall] = useState(false)
   const [error, setError] = useState('')
+  const [unfinished, setUnfinished] = useState(null) // Priority 2: exam-mode resume banner
   const timerRef = useRef(null)
   const usedCount = parseInt(localStorage.getItem(MOCK_KEY) || '0')
+
+  useEffect(() => { setUnfinished(loadSession()) }, [])
 
   // ── Timer ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -394,6 +400,29 @@ Make questions relevant to Indian government exam syllabus. Do not use markdown.
         {error && (
           <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 text-sm">
             ⚠️ {error}
+          </div>
+        )}
+
+        {/* Priority 2: continue last unfinished exam-mode test */}
+        {unfinished && (
+          <div className="card p-4 mb-6 border-2 border-primary-200 dark:border-primary-800 flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <PlayCircle className="h-8 w-8 text-primary-600 flex-shrink-0" />
+              <div className="min-w-0">
+                <p className="font-semibold text-sm truncate">Unfinished test: {unfinished.testTitle}</p>
+                <p className="text-xs text-gray-500">{Object.keys(unfinished.answers || {}).length}/{unfinished.questions.length} answered — pick up where you left off</p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => navigate('/mock-test/start', { state: { testId: unfinished.testId, title: unfinished.testTitle } })}
+                className="btn-primary text-sm py-2">
+                Resume
+              </button>
+              <button onClick={() => { clearSession(); setUnfinished(null) }} className="btn-secondary text-sm py-2">
+                Discard
+              </button>
+            </div>
           </div>
         )}
 

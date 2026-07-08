@@ -101,3 +101,29 @@ export const QUESTION_BANK = {
 export function getQuestionsForTest(testId) {
   return QUESTION_BANK[testId] || QUESTION_BANK['appsc-gs-1']
 }
+
+// ── Catalog metadata (Priority 2) ─────────────────────────────────────────────
+// Display titles for the built-in exam-mode tests.
+export const TEST_TITLES = {
+  'appsc-gs-1':          'APPSC Group-2 General Studies',
+  'ap-history':          'AP History Special',
+  'indian-polity':       'Indian Polity & Constitution',
+  'ap-geography':        'AP Geography',
+  'indian-economy':      'Indian Economy',
+  'general-science':     'General Science',
+  'tspsc-gs-1':          'TSPSC Group-1 General Studies',
+  'current-affairs-apts':'AP & TS Current Affairs',
+}
+
+// Maps a question `subject` label to the test that drills that subject.
+// Used for "practice your weakest area" recommendations.
+export const SUBJECT_TO_TEST = {
+  'General Studies': 'appsc-gs-1',
+  'AP History':      'ap-history',
+  'Indian Polity':   'indian-polity',
+  'AP Geography':    'ap-geography',
+  'Indian Economy':  'indian-economy',
+  'General Science': 'general-science',
+  'Current Affairs': 'current-affairs-apts',
+  'Telangana GK':    'tspsc-gs-1',
+}
