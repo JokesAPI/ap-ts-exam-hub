@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Helmet } from 'react-helmet-async'
 import { useNavigate } from 'react-router-dom'
 import Layout from '../../components/Layout'
-import { FileText, Clock, Users, Lock, CheckCircle, Star, ArrowRight, RotateCcw, Trophy, XCircle, ChevronRight, Loader, PlayCircle } from 'lucide-react'
+import { FileText, Clock, Users, Lock, CheckCircle, Star, ArrowRight, RotateCcw, Trophy, XCircle, ChevronRight, Loader, PlayCircle, History } from 'lucide-react'
 import { callGroq } from '../../lib/groq'
 import { loadSession, clearSession } from '../../lib/testSession'
 import { useExam } from '../../context/ExamContext'
@@ -449,9 +449,14 @@ Make questions relevant to Indian government exam syllabus. Do not use markdown.
             <Star className="h-5 w-5 text-yellow-500" />
             <span className="font-semibold">Free Plan: {Math.max(0, FREE_MOCK_LIMIT - usedCount)} test{Math.max(0, FREE_MOCK_LIMIT - usedCount) !== 1 ? 's' : ''} remaining</span>
           </div>
-          <a href="#upgrade" className="btn-primary text-sm py-1.5">
-            Upgrade ₹99/month -- Unlimited Tests
-          </a>
+          <div className="flex items-center gap-3">
+            <button onClick={() => navigate('/mock-tests/attempts')} className="text-sm font-medium text-primary-600 hover:underline inline-flex items-center gap-1">
+              <History className="h-4 w-4" /> My Attempts
+            </button>
+            <a href="#upgrade" className="btn-primary text-sm py-1.5">
+              Upgrade ₹99/month -- Unlimited Tests
+            </a>
+          </div>
         </div>
 
         {/* Phase 1: exam-centric filter */}

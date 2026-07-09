@@ -2,6 +2,30 @@
 
 ## [Unreleased] — v2-development
 
+### 2026-07-08 — Phase 2: Mock Test System Completion
+
+**Added**
+- Previous Attempts page (`/mock-tests/attempts`, protected): overall
+  best/avg/count, per-test summary cards with mini trend + Retry, test
+  filter, full attempt list with per-test improvement deltas. Reads
+  existing `mock_results` under own-row RLS; skeleton + empty states;
+  responsive.
+- Dashboard "Recommended Next Test" card (weakest-subject → targeted test)
+  and a "View all attempts" link. Discoverable "My Attempts" link on the
+  Mock Tests page.
+- `src/lib/mockStats.js` — shared stat/recommendation helpers, replacing
+  logic that was copy-pasted across the engine and dashboard.
+
+**Deferred (documented, not implemented)**
+- Difficulty analysis → Phase 3 (Question Bank): questions have no
+  `difficulty` field. No difficulty fabricated or inferred; no schema added.
+- Per-question time analysis: engine records total time only; no fake
+  per-question data shown.
+
+**Database:** none (no migration; reuses existing columns and RPCs).
+**Security:** new route behind `AuthRoute`; `mock_results_own` RLS verified;
+no new DB objects, no service-role, premium gating untouched.
+
 ### 2026-07-08 — Phase 1: Exam-Centric Foundation (consolidated)
 
 **Added**

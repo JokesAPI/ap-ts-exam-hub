@@ -8,10 +8,12 @@ import { useExam } from '../../context/ExamContext'
 import {
   Brain, FileText, BarChart2, Trophy, Clock, Star, LogOut, User, Zap,
   BookOpen, Crown, Bookmark, Newspaper, TrendingUp, Target, Medal,
-  PlayCircle, Trash2, ChevronRight
+  PlayCircle, Trash2, ChevronRight, Sparkles
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { loadSession } from '../../lib/testSession'
+import { recommendNextTest } from '../../lib/mockStats'
+import { TEST_TITLES } from '../../lib/questions'
 import toast from 'react-hot-toast'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -148,6 +150,9 @@ export default function StudentDashboard() {
     .sort((a, b) => a.pct - b.pct)
 
   const trend = [...results].reverse().slice(-10).map(r => ({ pct: pctOf(r) }))
+
+  // Recommended next test from weakest subject (reuses shared helper)
+  const nextTest = recommendNextTest(results)
 
   return (
     <Layout>
@@ -324,7 +329,32 @@ export default function StudentDashboard() {
 
           {/* Mock test history */}
           <div className="lg:col-span-2">
-            <h2 className="font-bold text-lg mb-4">Mock Test History</h2>
+            {/* Recommended next test (weakest subject) */}
+            {nextTest && (
+              <div className="card p-4 mb-4 border-2 border-primary-100 dark:border-primary-900/40 flex items-center justify-between flex-wrap gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <Sparkles className="h-8 w-8 text-primary-600 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="font-bold text-sm">Recommended next: {nextTest.title}</p>
+                    <p className="text-xs text-gray-500">Your weakest area is <b>{nextTest.name}</b> ({nextTest.pct}%) — this test targets it.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => navigate('/mock-test/start', { state: { testId: nextTest.recId, title: nextTest.title } })}
+                  className="btn-primary text-sm py-2">
+                  Start <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-bold text-lg">Mock Test History</h2>
+              {results.length > 0 && (
+                <Link to="/mock-tests/attempts" className="text-sm text-primary-600 font-medium inline-flex items-center gap-1 hover:underline">
+                  View all attempts <ChevronRight className="h-3.5 w-3.5" />
+                </Link>
+              )}
+            </div>
             {loading ? (
               <div className="card p-8 flex justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600" /></div>
             ) : results.length === 0 ? (

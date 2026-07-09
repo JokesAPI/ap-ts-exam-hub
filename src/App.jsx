@@ -14,6 +14,7 @@ import GeniusAI         from './pages/public/GeniusAI'
 import DailyQuiz        from './pages/public/DailyQuiz'
 import MockTests        from './pages/public/MockTests'
 import MockTestEngine   from './pages/public/MockTestEngine'
+import MockAttempts     from './pages/public/MockAttempts'
 import JobAlerts        from './pages/public/JobAlerts'
 import Login            from './pages/public/Login'
 import StudentDashboard from './pages/public/StudentDashboard'
@@ -95,6 +96,7 @@ export default function App() {
 
       {/* ── Student protected routes ── */}
       <Route path="/dashboard" element={<AuthRoute><StudentDashboard /></AuthRoute>} />
+      <Route path="/mock-tests/attempts" element={<AuthRoute><MockAttempts /></AuthRoute>} />
 
       {/* ── Admin routes — require is_admin = true ── */}
       <Route path="/admin/login"           element={<AdminLogin />} />
