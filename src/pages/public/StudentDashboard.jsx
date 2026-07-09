@@ -96,18 +96,24 @@ export default function StudentDashboard() {
       setLeaderboard(lbQ.data || [])
       setLatestCA(caQ.data || [])
 
-      // hydrate current-affairs bookmarks
+      // hydrate bookmarks (current affairs + previous papers)
       const bms   = bmQ.data || []
       const caIds = bms.filter(b => b.item_type === 'current_affairs' && b.item_id).map(b => b.item_id)
+      const ppIds = bms.filter(b => b.item_type === 'previous_papers' && b.item_id).map(b => b.item_id)
+      const byId = {}
       if (caIds.length > 0) {
         const { data: arts } = await supabase.from('current_affairs')
           .select('id, title, category, published_date').in('id', caIds)
         if (cancelled) return
-        const byId = Object.fromEntries((arts || []).map(a => [a.id, a]))
-        setBookmarks(bms.map(b => ({ bookmark: b, article: byId[b.item_id] || null })))
-      } else {
-        setBookmarks(bms.map(b => ({ bookmark: b, article: null })))
+        for (const a of arts || []) byId[a.id] = { ...a, _type: 'current_affairs' }
       }
+      if (ppIds.length > 0) {
+        const { data: papers } = await supabase.from('previous_papers')
+          .select('id, title, organization, year').in('id', ppIds)
+        if (cancelled) return
+        for (const p of papers || []) byId[p.id] = { id: p.id, title: p.title, category: p.organization || 'Paper', _type: 'previous_papers' }
+      }
+      setBookmarks(bms.map(b => ({ bookmark: b, article: byId[b.item_id] || null })))
       setLoading(false)
     }
     loadAll()
@@ -466,7 +472,7 @@ export default function StudentDashboard() {
                     {bookmarks.map(({ bookmark, article }) => (
                       <div key={bookmark.id} className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <Link to="/current-affairs" className="text-sm font-medium hover:text-primary-600 line-clamp-2">
+                          <Link to={article?._type === 'previous_papers' ? '/previous-papers' : '/current-affairs'} className="text-sm font-medium hover:text-primary-600 line-clamp-2">
                             {article?.title || 'Saved item'}
                           </Link>
                           {article?.category && <span className="text-xs text-gray-400">{article.category}</span>}

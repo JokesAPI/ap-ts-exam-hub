@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Trash2, Pencil, Plus, Upload } from 'lucide-react'
+import { Trash2, Pencil, Plus, Upload, FileSpreadsheet } from 'lucide-react'
 import AdminLayout from '../../components/AdminLayout'
 import Modal from '../../components/Modal'
 import { supabase } from '../../lib/supabase'
 import toast from 'react-hot-toast'
 
-const orgs = ['APPSC', 'TSPSC', 'AP Police', 'TS Police', 'DSC', 'RRB', 'SSC', 'Other']
+const orgs = ['APPSC', 'TGPSC', 'AP Police', 'TG Police', 'DSC', 'RRB', 'SSC', 'Other']
 const empty = { title: '', organization: '', year: '', subject: '', description: '', pdf_url: '' }
 
 export default function AdminPapers() {
@@ -17,6 +17,9 @@ export default function AdminPapers() {
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [file, setFile] = useState(null)
+  const [importModal, setImportModal] = useState(false)
+  const [importText, setImportText] = useState('')
+  const [importing, setImporting] = useState(false)
 
   const load = () => {
     setLoading(true)
@@ -58,6 +61,66 @@ export default function AdminPapers() {
     setModal(false); load()
   }
 
+  // ── Phase 5: CSV bulk import (dependency-free) ────────────────────────────
+  function parseCsv(text) {
+    const lines = text.split(/\r?\n/).filter(l => l.trim())
+    if (lines.length < 2) throw new Error('CSV needs a header row and at least one data row')
+    const split = line => {
+      const out = []; let cur = ''; let q = false
+      for (let i = 0; i < line.length; i++) {
+        const c = line[i]
+        if (c === '"') { if (q && line[i + 1] === '"') { cur += '"'; i++ } else q = !q }
+        else if (c === ',' && !q) { out.push(cur); cur = '' }
+        else cur += c
+      }
+      out.push(cur); return out.map(s => s.trim())
+    }
+    const headers = split(lines[0]).map(h => h.toLowerCase())
+    return lines.slice(1).map(line => {
+      const cells = split(line); const obj = {}
+      headers.forEach((h, i) => { obj[h] = cells[i] ?? '' })
+      return obj
+    })
+  }
+
+  async function onCsvFile(e) {
+    const f = e.target.files?.[0]
+    if (!f) return
+    try {
+      setImportText(JSON.stringify(parseCsv(await f.text()), null, 2))
+      toast.success('CSV parsed — review then Import')
+    } catch (err) { toast.error('CSV parse failed: ' + err.message) }
+    e.target.value = ''
+  }
+
+  async function bulkImport() {
+    let rows
+    try { rows = JSON.parse(importText) } catch { toast.error('Invalid JSON/CSV data'); return }
+    if (!Array.isArray(rows) || rows.length === 0) { toast.error('No rows to import'); return }
+    // validate + normalize; reject rows without a title
+    const clean = []
+    let rejected = 0
+    for (const r of rows) {
+      if (!r.title || !String(r.title).trim()) { rejected++; continue }
+      clean.push({
+        title: String(r.title).trim(),
+        organization: r.organization || null,
+        year: r.year ? Number(r.year) : null,
+        subject: r.subject || null,
+        description: r.description || null,
+        pdf_url: r.pdf_url || null,
+        exam_category: r.exam_category || r.organization || 'Other',
+      })
+    }
+    if (clean.length === 0) { toast.error('No valid rows (each needs a title)'); return }
+    setImporting(true)
+    const { error } = await supabase.from('previous_papers').insert(clean)
+    setImporting(false)
+    if (error) { toast.error(error.message); return }
+    toast.success(`Imported ${clean.length} paper(s)${rejected ? `, ${rejected} rejected` : ''}`)
+    setImportModal(false); setImportText(''); load()
+  }
+
   async function remove(id) {
     if (!confirm('Delete this paper?')) return
     await supabase.from('previous_papers').delete().eq('id', id)
@@ -68,7 +131,10 @@ export default function AdminPapers() {
     <AdminLayout>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Previous Papers</h1>
-        <button onClick={openAdd} className="btn-primary"><Plus className="h-4 w-4" /> Add</button>
+        <div className="flex gap-2">
+          <button onClick={() => setImportModal(true)} className="btn-secondary"><Upload className="h-4 w-4" /> Bulk Import</button>
+          <button onClick={openAdd} className="btn-primary"><Plus className="h-4 w-4" /> Add</button>
+        </div>
       </div>
       {loading ? (
         <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div></div>
@@ -139,6 +205,26 @@ export default function AdminPapers() {
               {uploading ? 'Uploading...' : saving ? 'Saving...' : 'Save'}
             </button>
           </div>
+        </div>
+      </Modal>
+
+      {/* Phase 5: CSV bulk import */}
+      <Modal open={importModal} onClose={() => setImportModal(false)} title="Bulk Import Papers" maxWidth="max-w-2xl">
+        <div className="space-y-3">
+          <p className="text-sm text-gray-500">
+            Upload a CSV (or paste JSON). Columns: <code>title</code> (required), organization,
+            year, subject, description, pdf_url. Rows without a title are skipped.
+          </p>
+          <label className="btn-secondary text-sm cursor-pointer inline-flex w-fit">
+            <FileSpreadsheet className="h-4 w-4" /> Load CSV file
+            <input type="file" accept=".csv,text/csv" className="hidden" onChange={onCsvFile} />
+          </label>
+          <textarea className="input font-mono text-xs" rows={9}
+            placeholder='title,organization,year,subject,pdf_url&#10;APPSC Group-1 2023,APPSC,2023,General Studies,https://...'
+            value={importText} onChange={e => setImportText(e.target.value)} />
+          <button onClick={bulkImport} disabled={importing} className="btn-primary w-full justify-center">
+            {importing ? 'Importing…' : 'Import Papers'}
+          </button>
         </div>
       </Modal>
     </AdminLayout>

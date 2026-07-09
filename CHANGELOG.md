@@ -2,6 +2,30 @@
 
 ## [Unreleased] — v2-development
 
+### 2026-07-09 — Phase 5: Previous Papers (PYQ) system completion
+
+**Added**
+- Bookmark papers: paper cards wired to the existing `bookmarks` table
+  (`item_type='previous_papers'`, own-row RLS); shown on the student
+  dashboard Bookmarks section with type-aware links.
+- Recently viewed papers: new `src/lib/recentPapers.js` (localStorage, capped
+  at 8), surfaced on the papers page.
+- Subject filter dropdown on the papers page (subject was displayed but not
+  filterable).
+- CSV bulk import in AdminPapers (dependency-free parser; admin-only via
+  existing RLS; title-less rows rejected).
+
+**Changed**
+- Org labels updated to official TG naming (TSPSC→TGPSC, TS Police→TG Police)
+  on the papers pages. Website name unchanged (**AP TS Exam Hub**).
+
+**Deferred:** AI tagging of papers (needs distinct AI workflow; no data
+fabricated).
+
+**Database:** none (reuses `bookmarks` + `previous_papers`; no migration).
+**Security:** bookmark writes own-row; CSV import admin-only; no new DB
+objects, no service-role, no secrets. **Performance:** no new deps.
+
 ### 2026-07-09 — Admin metrics & Automation dashboard
 
 **Database**
