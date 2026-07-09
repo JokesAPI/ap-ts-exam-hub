@@ -2,6 +2,33 @@
 
 ## [Unreleased] — v2-development
 
+### 2026-07-09 — Phase 4: AI Question Pipeline (non-duplicative)
+
+**Database**
+- `20260709140000_phase4_publish_validate_questions`: extends `validate_draft`
+  and `publish_draft` with a `questions` branch (create-or-replace; four
+  existing content types preserved; both remain SECURITY DEFINER + admin-gated
+  + auth.uid() checked). Questions drafts can now be validated (options,
+  answer A–D, required explanation, difficulty, duplicate check) and published
+  into `mock_questions` (published/ai_generated/human_verified, exam_id from
+  exam_slug). Rollback restores the pre-Phase-4 functions.
+
+**Added**
+- `src/lib/aiQuestionGen.js`: AI question generation + explanation enrichment
+  reusing the existing server-side Groq backend; inserts results into
+  `ai_drafts` as `status='draft'` (never auto-published), with client-side
+  validation and in-batch dedupe.
+- AdminQuestions: "AI Generate" modal (10/25/50/100 by exam/subject/topic) and
+  CSV import (dependency-free parser → existing draft import path). Excel via
+  CSV export — no heavy dependency added (bundle unchanged).
+
+**Reused (not duplicated):** AdminDrafts review queue, bulk actions, search,
+filters, health dashboard, `check_duplicate_draft`, the scheduler, and the CA
+generator.
+
+**Security:** no RLS changes; admin gates + auth.uid() preserved; Groq key
+server-side only; generated/imported content always enters as drafts.
+
 ### 2026-07-09 — Phase 3: Question Bank & AI Content Foundation
 
 **Database (reconciled from production; migrations byte-identical + rollbacks added)**

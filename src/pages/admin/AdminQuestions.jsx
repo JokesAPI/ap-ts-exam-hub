@@ -1,8 +1,9 @@
 import { useEffect, useState, useMemo } from 'react'
-import { Trash2, Pencil, Plus, Upload, Search, CheckCircle, Bot, X } from 'lucide-react'
+import { Trash2, Pencil, Plus, Upload, Search, CheckCircle, Bot, X, Sparkles, FileSpreadsheet } from 'lucide-react'
 import AdminLayout from '../../components/AdminLayout'
 import Modal from '../../components/Modal'
 import { supabase } from '../../lib/supabase'
+import { generateQuestionDrafts } from '../../lib/aiQuestionGen'
 import toast from 'react-hot-toast'
 
 const DIFFICULTIES = ['easy', 'medium', 'hard']
@@ -38,6 +39,10 @@ export default function AdminQuestions() {
   const [importText, setImportText] = useState('')
   const [importing, setImporting] = useState(false)
   const [selected, setSelected] = useState(new Set())
+  // Phase 4: AI generation
+  const [aiModal, setAiModal] = useState(false)
+  const [aiForm, setAiForm] = useState({ count: 10, examSlug: '', subject: '', topic: '' })
+  const [generating, setGenerating] = useState(false)
 
   // filters
   const [search, setSearch] = useState('')
@@ -153,7 +158,69 @@ export default function AdminQuestions() {
     setImportModal(false); setImportText(''); load()
   }
 
-  // ── Bulk approve / publish ────────────────────────────────────────────────
+  // ── Phase 4: AI question generation → ai_drafts (review queue) ─────────────
+  async function runAiGenerate() {
+    const count = Math.min(Math.max(Number(aiForm.count) || 10, 1), 100)
+    setGenerating(true)
+    try {
+      const exam = exams.find(e => e.slug === aiForm.examSlug)
+      const res = await generateQuestionDrafts({
+        count,
+        exam: exam?.title || '',
+        examSlug: aiForm.examSlug || null,
+        subject: aiForm.subject.trim() || null,
+        topic: aiForm.topic.trim() || null,
+      })
+      if (res.inserted === 0) {
+        toast.error(`No valid questions generated (${res.skipped} skipped). Try again.`)
+      } else {
+        toast.success(`${res.inserted} question draft(s) created${res.skipped ? `, ${res.skipped} skipped` : ''}. Review them in AI Drafts.`)
+        setAiModal(false)
+      }
+    } catch (e) {
+      toast.error('Generation failed: ' + e.message)
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  // ── Phase 4: CSV import (dependency-free) → drafts ────────────────────────
+  function parseCsv(text) {
+    const lines = text.split(/\r?\n/).filter(l => l.trim())
+    if (lines.length < 2) throw new Error('CSV needs a header row and at least one data row')
+    const split = line => {
+      const out = []; let cur = ''; let q = false
+      for (let i = 0; i < line.length; i++) {
+        const c = line[i]
+        if (c === '"') { if (q && line[i + 1] === '"') { cur += '"'; i++ } else q = !q }
+        else if (c === ',' && !q) { out.push(cur); cur = '' }
+        else cur += c
+      }
+      out.push(cur); return out.map(s => s.trim())
+    }
+    const headers = split(lines[0]).map(h => h.toLowerCase())
+    return lines.slice(1).map(line => {
+      const cells = split(line); const obj = {}
+      headers.forEach((h, i) => { obj[h] = cells[i] ?? '' })
+      return obj
+    })
+  }
+
+  async function onCsvFile(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const text = await file.text()
+      const rows = parseCsv(text)
+      // reuse the same JSON import path (as drafts, never auto-published)
+      setImportText(JSON.stringify(rows, null, 2))
+      toast.success(`Parsed ${rows.length} rows from CSV — review then Import as Drafts`)
+    } catch (err) {
+      toast.error('CSV parse failed: ' + err.message)
+    }
+    e.target.value = ''
+  }
+
   function toggleSelect(id) {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   }
@@ -174,6 +241,7 @@ export default function AdminQuestions() {
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <h1 className="text-2xl font-bold">Question Bank</h1>
         <div className="flex gap-2">
+          <button onClick={() => setAiModal(true)} className="btn-secondary"><Sparkles className="h-4 w-4" /> AI Generate</button>
           <button onClick={() => setImportModal(true)} className="btn-secondary"><Upload className="h-4 w-4" /> Bulk Import</button>
           <button onClick={openAdd} className="btn-primary"><Plus className="h-4 w-4" /> Add Question</button>
         </div>
@@ -332,10 +400,45 @@ export default function AdminQuestions() {
             Optional: option_a-d, explanation, subject, topic, subtopic, difficulty, test_id, source, source_year, tags.
             <b> All imported questions enter as drafts</b> — never auto-published.
           </p>
+          <label className="btn-secondary text-sm cursor-pointer inline-flex w-fit">
+            <FileSpreadsheet className="h-4 w-4" /> Load CSV file
+            <input type="file" accept=".csv,text/csv" className="hidden" onChange={onCsvFile} />
+          </label>
           <textarea className="input font-mono text-xs" rows={10} placeholder='[{"question":"...","option_a":"...","option_b":"...","option_c":"...","option_d":"...","correct_answer":"A","subject":"Indian Polity","difficulty":"medium"}]'
             value={importText} onChange={e => setImportText(e.target.value)} />
           <button onClick={bulkImport} disabled={importing} className="btn-primary w-full justify-center">
             {importing ? 'Importing...' : 'Import as Drafts'}
+          </button>
+        </div>
+      </Modal>
+
+      {/* Phase 4: AI generate modal */}
+      <Modal open={aiModal} onClose={() => setAiModal(false)} title="AI Generate Questions" maxWidth="max-w-lg">
+        <div className="space-y-3">
+          <p className="text-sm text-gray-500">
+            Generates competitive-exam questions with Groq and files them as <b>drafts</b> in
+            the AI Drafts review queue. Nothing is published automatically — you review,
+            validate, and publish there.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="block text-sm font-medium mb-1">How many</label>
+              <select className="input" value={aiForm.count} onChange={e => setAiForm({ ...aiForm, count: e.target.value })}>
+                {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+              </select></div>
+            <div><label className="block text-sm font-medium mb-1">Exam</label>
+              <select className="input" value={aiForm.examSlug} onChange={e => setAiForm({ ...aiForm, examSlug: e.target.value })}>
+                <option value="">— any —</option>
+                {exams.map(e => <option key={e.id} value={e.slug}>{e.title}</option>)}
+              </select></div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="block text-sm font-medium mb-1">Subject</label>
+              <input className="input" placeholder="e.g. Indian Polity" value={aiForm.subject} onChange={e => setAiForm({ ...aiForm, subject: e.target.value })} /></div>
+            <div><label className="block text-sm font-medium mb-1">Topic (optional)</label>
+              <input className="input" placeholder="e.g. Fundamental Rights" value={aiForm.topic} onChange={e => setAiForm({ ...aiForm, topic: e.target.value })} /></div>
+          </div>
+          <button onClick={runAiGenerate} disabled={generating} className="btn-primary w-full justify-center">
+            <Sparkles className="h-4 w-4" /> {generating ? 'Generating…' : 'Generate Drafts'}
           </button>
         </div>
       </Modal>
