@@ -2,6 +2,43 @@
 
 ## [Unreleased] — v2-development
 
+### 2026-07-09 — Phase 3: Question Bank & AI Content Foundation
+
+**Database (reconciled from production; migrations byte-identical + rollbacks added)**
+- `20260709022206_phase3_question_bank_foundation`: extends the existing
+  (previously unused) `mock_questions` table into a professional question
+  bank — exam_id FK, topic, subtopic, language, source, source_year, tags,
+  status, created_by, reviewed_by, ai_generated, human_verified,
+  published_at, updated_at (+trigger), metadata; status/difficulty CHECK
+  constraints (difficulty explicit easy/medium/hard — never inferred);
+  indexes; RLS select-published policy; extends `ai_drafts.content_type` to
+  accept `questions` (reuses the existing AI pipeline). Non-destructive
+  backfill of all 75 rows → published/en/human_verified; 20 linked to exam.
+- `20260709022725_phase3_question_bank_grants_hardening`: grant authenticated
+  SELECT (published only), revoke all anon grants.
+
+**Added (frontend)**
+- Admin Question Bank (`/admin/questions`): CRUD, search + exam/subject/
+  difficulty/status filters, bulk import (JSON → drafts, never auto-
+  published), bulk approve/publish/reject, topic hierarchy fields,
+  difficulty as explicit select, AI-generated badge. Reuses
+  AdminLayout/Modal/toast.
+- DB-backed question loading: `loadQuestionsForTest()` reads published
+  `mock_questions` with the built-in `QUESTION_BANK` as fallback so existing
+  tests keep working during migration (backward compatible; engine unchanged
+  in behavior).
+
+**Branding**
+- Display title "TSPSC Group-1…" → "TGPSC Group-1…" per permanent TG naming
+  rule (internal `tspsc-gs-1` keys unchanged to preserve data joins).
+
+**Deferred:** difficulty is now stored explicitly; a legacy seed quiz row
+still references "TSPSC" as historical factual content (left intact).
+
+**Security:** admin-gated writes (`mock_questions_write_admin`),
+published-only reads, anon revoked — verified in production. No
+service-role. Route behind `AdminRoute`.
+
 ### 2026-07-08 — Phase 2: Mock Test System Completion
 
 **Added**

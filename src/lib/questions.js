@@ -102,6 +102,28 @@ export function getQuestionsForTest(testId) {
   return QUESTION_BANK[testId] || QUESTION_BANK['appsc-gs-1']
 }
 
+// ── Phase 3: DB-first loader with hardcoded fallback ─────────────────────────
+// Loads PUBLISHED questions from the mock_questions bank for a test_id. If the
+// bank has none yet (or the query errors), falls back to the built-in
+// QUESTION_BANK so existing tests keep working during migration.
+// The engine consumes this; the sync getQuestionsForTest above is retained for
+// backward compatibility and as the ultimate fallback.
+export async function loadQuestionsForTest(supabase, testId) {
+  try {
+    const { data, error } = await supabase
+      .from('mock_questions')
+      .select('id, question, option_a, option_b, option_c, option_d, correct_answer, explanation, subject, difficulty, topic')
+      .eq('test_id', testId)
+      .eq('status', 'published')
+    if (error) throw error
+    if (data && data.length > 0) return data
+  } catch (err) {
+    console.error('loadQuestionsForTest DB error, using built-in bank:', err)
+  }
+  // Fallback: built-in bank (unchanged behavior)
+  return getQuestionsForTest(testId) || getQuestionsForTest('appsc-gs-1') || []
+}
+
 // ── Catalog metadata (Priority 2) ─────────────────────────────────────────────
 // Display titles for the built-in exam-mode tests.
 export const TEST_TITLES = {
@@ -111,7 +133,7 @@ export const TEST_TITLES = {
   'ap-geography':        'AP Geography',
   'indian-economy':      'Indian Economy',
   'general-science':     'General Science',
-  'tspsc-gs-1':          'TSPSC Group-1 General Studies',
+  'tspsc-gs-1':          'TGPSC Group-1 General Studies',
   'current-affairs-apts':'AP & TS Current Affairs',
 }
 

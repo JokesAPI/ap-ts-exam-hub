@@ -4,7 +4,7 @@ import { useNavigate, useLocation, Link } from 'react-router-dom'
 import Layout from '../../components/Layout'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
-import { getQuestionsForTest, TEST_TITLES, SUBJECT_TO_TEST } from '../../lib/questions'
+import { getQuestionsForTest, loadQuestionsForTest, TEST_TITLES, SUBJECT_TO_TEST } from '../../lib/questions'
 import { loadSession, saveSession, clearSession } from '../../lib/testSession'
 import {
   Clock, CheckCircle, XCircle, AlertCircle, Trophy,
@@ -166,11 +166,10 @@ export default function MockTestEngine() {
     setTimeout(loadQuestions, 50)
   }
 
-  function loadQuestions() {
+  async function loadQuestions() {
     try {
-      const localQs  = getQuestionsForTest(testId)
-      const fallback = getQuestionsForTest('appsc-gs-1')
-      const pool     = (localQs?.length > 0 ? localQs : fallback) || []
+      const dbQs     = await loadQuestionsForTest(supabase, testId)
+      const pool     = (dbQs?.length > 0 ? dbQs : getQuestionsForTest('appsc-gs-1')) || []
       const shuffled = [...pool].sort(() => Math.random() - 0.5)
       setQuestions(shuffled)
       questionsRef.current = shuffled

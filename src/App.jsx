@@ -28,6 +28,7 @@ import AdminExams          from './pages/admin/AdminExams'
 import AdminCurrentAffairs from './pages/admin/AdminCurrentAffairs'
 import AdminPapers         from './pages/admin/AdminPapers'
 import AdminDrafts         from './pages/admin/AdminDrafts'
+import AdminQuestions      from './pages/admin/AdminQuestions'
 
 // ── Loading spinner ────────────────────────────────────────────────────────────
 function Spinner() {
@@ -106,6 +107,7 @@ export default function App() {
       <Route path="/admin/current-affairs" element={<AdminRoute><AdminCurrentAffairs /></AdminRoute>} />
       <Route path="/admin/papers"          element={<AdminRoute><AdminPapers /></AdminRoute>} />
       <Route path="/admin/drafts"          element={<AdminRoute><AdminDrafts /></AdminRoute>} />
+      <Route path="/admin/questions"       element={<AdminRoute><AdminQuestions /></AdminRoute>} />
 
       {/* ── Fix #11: 404 catch-all ── */}
       <Route path="*" element={<NotFound />} />
