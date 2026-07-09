@@ -1,23 +1,5 @@
--- ============================================================================
--- 20260708113000_codify_get_test_rank_rpc
---
--- Part of: Priority 2 — Mock Test Improvements (rank prediction)
---
--- AUDIT FINDING: get_test_rank() already existed in production (created in a
--- prior working session) but was MISSING from the repo's migration folder —
--- a source-of-truth gap. This migration codifies the exact production
--- definition so GitHub matches production. Applying it is a safe no-op
--- re-apply (create or replace + idempotent grants).
---
--- Semantics: for a given test and percentage, returns the attempt pool size,
--- how many attempts scored strictly higher, the caller's percentile, and the
--- predicted rank (better_count + 1). Aggregate-only output — no user ids,
--- names, or row-level data ever leaves the function.
---
--- Security: SECURITY DEFINER (required because mock_results own-rows RLS
--- correctly blocks cross-user reads from clients), search_path pinned,
--- internal auth.uid() guard, EXECUTE for authenticated only.
--- ============================================================================
+-- Codify the existing production get_test_rank into migration history.
+-- Safe no-op re-apply: definition is byte-identical to production.
 
 begin;
 
@@ -47,7 +29,7 @@ as $$
     case when count(*) = 0 then 100
          else round(100.0 * count(*) filter (where pct <= p_percentage)
                     / count(*), 1)
-    end                                                        as percentile,
+    end                                                       as percentile,
     (count(*) filter (where pct > p_percentage))::bigint + 1   as predicted_rank
   from pool;
 $$;

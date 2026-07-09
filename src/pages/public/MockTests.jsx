@@ -5,6 +5,18 @@ import Layout from '../../components/Layout'
 import { FileText, Clock, Users, Lock, CheckCircle, Star, ArrowRight, RotateCcw, Trophy, XCircle, ChevronRight, Loader, PlayCircle } from 'lucide-react'
 import { callGroq } from '../../lib/groq'
 import { loadSession, clearSession } from '../../lib/testSession'
+import { useExam } from '../../context/ExamContext'
+
+// Phase 1: is this catalog test relevant to the user's selected exam?
+// (String-based bridge over the hardcoded catalog — replaced by proper
+// exam_id relations in Phase 2's mock test architecture.)
+function testMatchesExam(test, exam) {
+  if (!exam) return true
+  const t = `${test.exam} ${test.title}`.toLowerCase()
+  const title = (exam.title || '').toLowerCase()
+  const org   = (exam.organization || '').toLowerCase()
+  return (title && t.includes(title)) || (org && t.includes(org))
+}
 
 const FREE_MOCK_LIMIT = 2
 const MOCK_KEY = 'mock_tests_used'
@@ -67,8 +79,14 @@ export default function MockTests() {
   const [showPaywall, setShowPaywall] = useState(false)
   const [error, setError] = useState('')
   const [unfinished, setUnfinished] = useState(null) // Priority 2: exam-mode resume banner
+  const { selectedExam } = useExam()
+  const [myExamOnly, setMyExamOnly] = useState(true)  // Phase 1: default to selected exam
   const timerRef = useRef(null)
   const usedCount = parseInt(localStorage.getItem(MOCK_KEY) || '0')
+
+  const matchingCount = selectedExam ? mockTests.filter(t => testMatchesExam(t, selectedExam)).length : 0
+  const examFilterActive = Boolean(selectedExam) && myExamOnly && matchingCount > 0
+  const visibleTests = examFilterActive ? mockTests.filter(t => testMatchesExam(t, selectedExam)) : mockTests
 
   useEffect(() => { setUnfinished(loadSession()) }, [])
 
@@ -436,8 +454,22 @@ Make questions relevant to Indian government exam syllabus. Do not use markdown.
           </a>
         </div>
 
+        {/* Phase 1: exam-centric filter */}
+        {selectedExam && matchingCount > 0 && (
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            <button onClick={() => setMyExamOnly(true)}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${examFilterActive ? 'bg-primary-600 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}>
+              For {selectedExam.title} ({matchingCount})
+            </button>
+            <button onClick={() => setMyExamOnly(false)}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${!examFilterActive ? 'bg-primary-600 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}>
+              All Tests ({mockTests.length})
+            </button>
+          </div>
+        )}
+
         <div className="grid sm:grid-cols-2 gap-4 mb-10">
-          {mockTests.map(test => {
+          {visibleTests.map(test => {
             const locked = !test.free && usedCount >= FREE_MOCK_LIMIT
             return (
               <div key={test.id} className="card p-5 hover:shadow-md transition-shadow">

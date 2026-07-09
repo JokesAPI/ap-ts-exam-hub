@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Helmet } from 'react-helmet-async'
 import Layout from '../../components/Layout'
+import ExamPicker from '../../components/ExamPicker'
 import { useAuth } from '../../context/AuthContext'
+import { useExam } from '../../context/ExamContext'
 import {
   Brain, FileText, BarChart2, Trophy, Clock, Star, LogOut, User, Zap,
   BookOpen, Crown, Bookmark, Newspaper, TrendingUp, Target, Medal,
@@ -52,7 +54,19 @@ function TrendChart({ data }) {
 
 export default function StudentDashboard() {
   const { user, profile, signOut, isPro } = useAuth()
+  const { selectedExam, loadingExams } = useExam()
   const navigate = useNavigate()
+  const [examPickerOpen, setExamPickerOpen] = useState(false)
+
+  // Phase 1: gentle one-time prompt for users with no exam selected
+  useEffect(() => {
+    if (!user || loadingExams || selectedExam) return
+    try {
+      if (sessionStorage.getItem('exam_prompt_shown')) return
+      sessionStorage.setItem('exam_prompt_shown', '1')
+    } catch {}
+    setExamPickerOpen(true)
+  }, [user, loadingExams, selectedExam])
 
   const [results,     setResults]     = useState([])
   const [leaderboard, setLeaderboard] = useState([])
@@ -159,6 +173,12 @@ export default function StudentDashboard() {
                   Free Plan
                 </span>
               )}
+              <button onClick={() => setExamPickerOpen(true)}
+                className="inline-flex items-center gap-1 badge bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300 mt-1 ml-2 hover:bg-primary-100 dark:hover:bg-primary-900/40 transition-colors"
+                title="Change exam">
+                <Target className="h-3 w-3" />
+                {selectedExam ? `Preparing for ${selectedExam.title}` : 'Choose your exam'}
+              </button>
             </div>
           </div>
           <button onClick={handleSignOut} className="btn-secondary text-sm">
@@ -459,6 +479,8 @@ export default function StudentDashboard() {
           </div>
         </div>
       </div>
+
+      <ExamPicker open={examPickerOpen} onClose={() => setExamPickerOpen(false)} />
     </Layout>
   )
 }

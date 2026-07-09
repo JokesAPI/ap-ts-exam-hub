@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Helmet } from 'react-helmet-async'
-import { FileText, Search, CalendarDays } from 'lucide-react'
+import { FileText, Search, CalendarDays, Target } from 'lucide-react'
 import Layout from '../../components/Layout'
 import { supabase } from '../../lib/supabase'
+import { useExam } from '../../context/ExamContext'
 
 export default function Exams() {
+  const { selectedExam, selectExam } = useExam()
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -65,11 +67,26 @@ export default function Exams() {
                     {e.exam_date ? new Date(e.exam_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'TBA'}
                   </div>
                 </div>
-                {e.notification_url && (
-                  <a href={e.notification_url} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-primary-600 text-sm font-medium hover:underline">
-                    Official Notification
-                  </a>
-                )}
+                {/* Phase 1: exam-centric action */}
+                <div className="mt-3 flex items-center gap-3 flex-wrap">
+                  {e.notification_url && (
+                    <a href={e.notification_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-primary-600 text-sm font-medium hover:underline">
+                      Official Notification
+                    </a>
+                  )}
+                  {e.slug && (
+                    selectedExam?.id === e.id ? (
+                      <span className="inline-flex items-center gap-1.5 text-green-600 text-sm font-medium">
+                        <Target className="h-3.5 w-3.5" /> Your exam
+                      </span>
+                    ) : (
+                      <button onClick={() => selectExam(e)}
+                        className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-primary-600 transition-colors">
+                        <Target className="h-3.5 w-3.5" /> Set as my exam
+                      </button>
+                    )
+                  )}
+                </div>
               </div>
             ))}
           </div>

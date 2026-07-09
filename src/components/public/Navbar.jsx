@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { Link, NavLink } from 'react-router-dom'
-import { Menu, X, Sun, Moon, BookOpen, Sparkles } from 'lucide-react'
+import { Menu, X, Sun, Moon, BookOpen, Sparkles, Target } from 'lucide-react'
 import { useTheme } from '../../context/ThemeContext'
+import { useExam } from '../../context/ExamContext'
+import ExamPicker from '../ExamPicker'
 
 const links = [
   { to: '/', label: 'Home' },
@@ -16,7 +18,18 @@ const links = [
 
 export default function Navbar() {
   const [open, setOpen] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
   const { dark, toggle } = useTheme()
+  const { selectedExam } = useExam()
+
+  const examChip = (extra = '') => (
+    <button onClick={() => setPickerOpen(true)}
+      className={`flex items-center gap-1.5 bg-white/10 hover:bg-white/20 border border-white/20 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors max-w-[160px] ${extra}`}
+      title="Change exam">
+      <Target className="h-3.5 w-3.5 text-yellow-300 flex-shrink-0" />
+      <span className="truncate">{selectedExam ? selectedExam.title : 'Choose Exam'}</span>
+    </button>
+  )
 
   return (
     <nav className="bg-primary-800 dark:bg-gray-900 text-white sticky top-0 z-50 shadow-lg">
@@ -38,6 +51,7 @@ export default function Navbar() {
                 {l.label}
               </NavLink>
             ))}
+            <span className="ml-2">{examChip()}</span>
             <Link to="/genius-ai" className="ml-2 flex items-center gap-1.5 bg-yellow-400 hover:bg-yellow-300 text-yellow-900 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors">
               <Sparkles className="h-3.5 w-3.5" /> Genius AI
             </Link>
@@ -63,6 +77,7 @@ export default function Navbar() {
 
       {open && (
         <div className="lg:hidden border-t border-white/10 px-4 py-3 grid grid-cols-2 gap-1">
+          <div className="col-span-2 mb-1">{examChip('w-full max-w-none justify-center py-2')}</div>
           {links.map(l => (
             <NavLink key={l.to} to={l.to} end={l.to === '/'}
               onClick={() => setOpen(false)}
@@ -78,6 +93,8 @@ export default function Navbar() {
           </Link>
         </div>
       )}
+
+      <ExamPicker open={pickerOpen} onClose={() => setPickerOpen(false)} />
     </nav>
   )
 }

@@ -3,6 +3,7 @@ import { Helmet } from 'react-helmet-async'
 import { FileArchive, Search, Download } from 'lucide-react'
 import Layout from '../../components/Layout'
 import { supabase } from '../../lib/supabase'
+import { useExam } from '../../context/ExamContext'
 
 const orgs = ['All', 'APPSC', 'TSPSC', 'AP Police', 'TS Police', 'DSC', 'RRB', 'SSC', 'Other']
 
@@ -12,15 +13,24 @@ export default function PreviousPapers() {
   const [search, setSearch] = useState('')
   const [org, setOrg] = useState('All')
   const [year, setYear] = useState('All')
+  // Phase 1: exam-centric filter via previous_papers.exam_id (new FK).
+  // Renders only when at least one paper is linked to the selected exam,
+  // so it is inert until papers are tagged (Phase 7 completes this page).
+  const { selectedExam } = useExam()
+  const [myExamOnly, setMyExamOnly] = useState(true)
 
   useEffect(() => {
     supabase.from('previous_papers').select('*').order('year', { ascending: false })
       .then(({ data }) => { setItems(data || []); setLoading(false) })
   }, [])
 
+  const examLinkedCount = selectedExam ? items.filter(p => p.exam_id === selectedExam.id).length : 0
+  const examFilterActive = Boolean(selectedExam) && myExamOnly && examLinkedCount > 0
+
   const years = ['All', ...Array.from(new Set(items.map(i => String(i.year)).filter(Boolean))).sort((a, b) => b - a)]
 
   const filtered = items.filter(p =>
+    (!examFilterActive || p.exam_id === selectedExam.id) &&
     (org === 'All' || p.organization === org) &&
     (year === 'All' || String(p.year) === year) &&
     (p.title.toLowerCase().includes(search.toLowerCase()))
@@ -48,6 +58,20 @@ export default function PreviousPapers() {
             {years.map(y => <option key={y}>{y}</option>)}
           </select>
         </div>
+
+        {/* Phase 1: exam-centric filter chips (shown only once papers are tagged to the exam) */}
+        {selectedExam && examLinkedCount > 0 && (
+          <div className="flex flex-wrap items-center gap-2 mb-6">
+            <button onClick={() => setMyExamOnly(true)}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${examFilterActive ? 'bg-primary-600 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}>
+              For {selectedExam.title} ({examLinkedCount})
+            </button>
+            <button onClick={() => setMyExamOnly(false)}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${!examFilterActive ? 'bg-primary-600 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}>
+              All Papers ({items.length})
+            </button>
+          </div>
+        )}
 
         {loading ? (
           <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div></div>

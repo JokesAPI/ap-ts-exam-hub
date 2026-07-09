@@ -37,7 +37,7 @@ alter table public.mock_results
 create index if not exists idx_mock_results_user_created
   on public.mock_results (user_id, created_at desc);
 
--- (3) Leaderboard RPC ---------------------------------------------------------
+-- (3) Leaderboard RPC ------------------------------------------------------------
 create or replace function public.get_leaderboard(limit_count integer default 10)
 returns table (
   rank            bigint,

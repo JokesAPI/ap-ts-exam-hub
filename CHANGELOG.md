@@ -2,6 +2,48 @@
 
 ## [Unreleased] — v2-development
 
+### 2026-07-08 — Phase 1: Exam-Centric Foundation (consolidated)
+
+**Added**
+- Canonical exam catalog: 29 exams (APPSC/TSPSC groups incl. "Services"
+  titles, AP/TG EAPCET·POLYCET·ECET, AP/TG TET·DSC, AP/TG Police SI &
+  Constable, SSC CGL/CHSL/MTS, RRB NTPC/Group D, IBPS PO/Clerk, SBI
+  PO/Clerk) with permanent SEO slugs, category, state, display_order,
+  is_active. Slugs frozen by a DB trigger (`trg_exams_protect_slug`) —
+  immutable for app roles forever.
+- Primary exam selection: `profiles.selected_exam_id` (FK) + `ExamContext`
+  (profile-wins resolution, guest localStorage, one-time guest→profile
+  sync) + reusable `ExamPicker` modal. Surfaces: Navbar chip (desktop +
+  mobile), dashboard "Preparing for" chip + one-time prompt, Mock Tests
+  "For my exam" filter, Previous Papers exam filter, `/exams` "Set as my
+  exam". `previous_papers.exam_id` FK added (papers exam-linkable).
+- Repo↔production reconciliation: two production-applied migrations were
+  missing from the repo and are now committed byte-identical (md5-verified):
+  `20260708013156_mock_test_rank_prediction`,
+  `20260708061409_phase1_exam_centric_foundation` (work of a parallel
+  session — see docs/PHASE1_EXAM_FOUNDATION.md provenance note).
+
+**Fixed**
+- Canonical APPSC Group-2 is the oldest content-rich record (`fa4bfb17`);
+  both approved duplicates removed; references repointed. Zero duplicate
+  slugs/titles in the catalog.
+- Missing `GRANT UPDATE (selected_exam_id)` — exam selection could not be
+  saved by signed-in users; verified working via simulated authenticated
+  session.
+- `/previous-papers` P0: page always queried non-existent columns
+  (`order by year` → 400). Additive columns added; `organization`
+  backfilled from `exam_category`.
+- TG display naming (TG DSC, TG Police SI, TG Police Constable) with final
+  `tg-*` slugs, renamed pre-freeze.
+
+**Security**
+- No RLS policies modified. Premium/admin profile columns verified still
+  locked (authenticated `is_pro` update → permission denied). Slug
+  immutability enforced at DB level. Auth, subscription, admin panel,
+  dashboard, automation untouched and verified via page-query checks.
+- Corrective migration `20260708090000_phase1_catalog_corrections` applied
+  to production; rollback dry-run executed and verified restorative.
+
 ### 2026-07-08 — Mock Test Improvements (Priority 2)
 
 **Added**
