@@ -2,6 +2,28 @@
 
 ## [Unreleased] — v2-development
 
+### 2026-07-09 — Admin metrics & Automation dashboard
+
+**Database**
+- `20260709160000_phase5_question_metrics_rpc`: new admin-gated
+  `get_question_metrics()` RPC (real question/AI counts + by-exam/subject/
+  difficulty + recent AI activity; SECURITY DEFINER, search_path pinned).
+  Hardening: revoke EXECUTE from PUBLIC on `get_question_metrics` and
+  `get_automation_health`, re-grant to authenticated/service_role only (anon
+  denied). Rollback included. No table/RLS changes.
+
+**Added**
+- Admin dashboard Question Bank metrics section (real counts + by-subject/
+  by-exam) — additive; existing cards unchanged.
+- `/admin/automation` dashboard (lazy-loaded, ~6.85 kB chunk): health cards,
+  last run/success/failure, sources table, recent AI activity — all from
+  existing/new RPCs, no fabricated data. Nav link added.
+
+**Performance:** no new deps; automation page code-split; dashboard uses one
+RPC instead of many client queries.
+**Security:** metrics RPCs admin-gated; anon EXECUTE removed; route behind
+AdminRoute; no secrets in frontend.
+
 ### 2026-07-09 — Phase 4: AI Question Pipeline (non-duplicative)
 
 **Database**

@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Bell, FileText, Newspaper, FileArchive, Plus } from 'lucide-react'
+import { Bell, FileText, Newspaper, FileArchive, Plus, ListChecks, Bot, CheckCircle2, Clock, Activity } from 'lucide-react'
 import AdminLayout from '../../components/AdminLayout'
 import { supabase } from '../../lib/supabase'
 
 export default function AdminDashboard() {
   const [counts, setCounts] = useState({ notifications: 0, exams: 0, current_affairs: 0, previous_papers: 0 })
+  const [qm, setQm] = useState(null) // question metrics
 
   useEffect(() => {
     const tables = ['notifications', 'exams', 'current_affairs', 'previous_papers']
@@ -17,6 +18,7 @@ export default function AdminDashboard() {
         previous_papers: results[3].count || 0,
       })
     })
+    supabase.rpc('get_question_metrics').then(({ data }) => { if (data) setQm(data) })
   }, [])
 
   const stats = [
@@ -49,8 +51,61 @@ export default function AdminDashboard() {
         ))}
       </div>
 
+      {/* Phase 5: real Question Bank metrics */}
+      {qm && (
+        <div className="mb-10">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-semibold text-lg">Question Bank</h2>
+            <Link to="/admin/questions" className="text-sm text-primary-600 hover:underline">Manage →</Link>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+            {[
+              { label: 'Total', value: qm.total_questions, icon: ListChecks },
+              { label: 'Published', value: qm.published, icon: CheckCircle2 },
+              { label: 'Draft', value: qm.draft, icon: Clock },
+              { label: 'AI Generated', value: qm.ai_generated, icon: Bot },
+              { label: 'Human Verified', value: qm.human_verified, icon: CheckCircle2 },
+              { label: 'Pending Review', value: qm.question_drafts_pending, icon: Activity },
+            ].map(({ label, value, icon: Icon }) => (
+              <div key={label} className="card p-4">
+                <Icon className="h-4 w-4 text-primary-600 mb-1.5" />
+                <p className="text-2xl font-bold">{value ?? 0}</p>
+                <p className="text-xs text-gray-500">{label}</p>
+              </div>
+            ))}
+          </div>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="card p-4">
+              <p className="font-semibold text-sm mb-3">Questions by Subject</p>
+              {(qm.by_subject || []).length === 0 ? <p className="text-sm text-gray-400">No data.</p> : (
+                <div className="space-y-2">
+                  {qm.by_subject.slice(0, 6).map(s => (
+                    <div key={s.subject} className="flex items-center justify-between text-sm">
+                      <span className="text-gray-600 dark:text-gray-300 truncate">{s.subject}</span>
+                      <span className="font-semibold">{s.count}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="card p-4">
+              <p className="font-semibold text-sm mb-3">Questions by Exam</p>
+              {(qm.by_exam || []).length === 0 ? <p className="text-sm text-gray-400">No data.</p> : (
+                <div className="space-y-2">
+                  {qm.by_exam.slice(0, 6).map(e => (
+                    <div key={e.exam} className="flex items-center justify-between text-sm">
+                      <span className="text-gray-600 dark:text-gray-300 truncate">{e.exam}</span>
+                      <span className="font-semibold">{e.count}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div>
-        <h2 className="font-semibold text-lg mb-4">Quick Actions</h2>
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {[
             { to: '/admin/notifications', label: 'Add Notification', color: 'border-red-200 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-900/10' },

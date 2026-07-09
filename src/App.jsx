@@ -1,4 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
+import { lazy, Suspense } from 'react'
 import { useAuth } from './context/AuthContext'
 
 // Public pages
@@ -29,6 +30,8 @@ import AdminCurrentAffairs from './pages/admin/AdminCurrentAffairs'
 import AdminPapers         from './pages/admin/AdminPapers'
 import AdminDrafts         from './pages/admin/AdminDrafts'
 import AdminQuestions      from './pages/admin/AdminQuestions'
+// Phase 5: heavier admin-only monitoring page — lazy-loaded to keep main bundle small
+const AdminAutomation = lazy(() => import('./pages/admin/AdminAutomation'))
 
 // ── Loading spinner ────────────────────────────────────────────────────────────
 function Spinner() {
@@ -108,6 +111,7 @@ export default function App() {
       <Route path="/admin/papers"          element={<AdminRoute><AdminPapers /></AdminRoute>} />
       <Route path="/admin/drafts"          element={<AdminRoute><AdminDrafts /></AdminRoute>} />
       <Route path="/admin/questions"       element={<AdminRoute><AdminQuestions /></AdminRoute>} />
+      <Route path="/admin/automation"      element={<AdminRoute><Suspense fallback={<Spinner />}><AdminAutomation /></Suspense></AdminRoute>} />
 
       {/* ── Fix #11: 404 catch-all ── */}
       <Route path="*" element={<NotFound />} />
