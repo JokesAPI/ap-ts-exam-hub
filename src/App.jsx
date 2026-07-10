@@ -2,7 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { lazy, Suspense } from 'react'
 import { useAuth } from './context/AuthContext'
 
-// Public pages
+// Public pages — SEO-critical / lightweight: kept eager for fast first paint + crawlability
 import Home             from './pages/public/Home'
 import Notifications    from './pages/public/Notifications'
 import Exams            from './pages/public/Exams'
@@ -11,25 +11,27 @@ import PreviousPapers   from './pages/public/PreviousPapers'
 import AboutUs          from './pages/public/AboutUs'
 import Contact          from './pages/public/Contact'
 import PrivacyPolicy    from './pages/public/PrivacyPolicy'
-import GeniusAI         from './pages/public/GeniusAI'
 import DailyQuiz        from './pages/public/DailyQuiz'
 import MockTests        from './pages/public/MockTests'
-import MockTestEngine   from './pages/public/MockTestEngine'
-import MockAttempts     from './pages/public/MockAttempts'
 import JobAlerts        from './pages/public/JobAlerts'
 import Login            from './pages/public/Login'
-import StudentDashboard from './pages/public/StudentDashboard'
-import Subscribe        from './pages/public/Subscribe'
 
-// Admin pages
-import AdminLogin          from './pages/admin/AdminLogin'
-import AdminDashboard      from './pages/admin/AdminDashboard'
-import AdminNotifications  from './pages/admin/AdminNotifications'
-import AdminExams          from './pages/admin/AdminExams'
-import AdminCurrentAffairs from './pages/admin/AdminCurrentAffairs'
-import AdminPapers         from './pages/admin/AdminPapers'
-import AdminDrafts         from './pages/admin/AdminDrafts'
-import AdminQuestions      from './pages/admin/AdminQuestions'
+// Heavy interactive / authenticated public pages — lazy-loaded
+const GeniusAI         = lazy(() => import('./pages/public/GeniusAI'))
+const MockTestEngine   = lazy(() => import('./pages/public/MockTestEngine'))
+const MockAttempts     = lazy(() => import('./pages/public/MockAttempts'))
+const StudentDashboard = lazy(() => import('./pages/public/StudentDashboard'))
+const Subscribe        = lazy(() => import('./pages/public/Subscribe'))
+
+// Admin pages — admin-only, never needed by students: all lazy-loaded
+const AdminLogin          = lazy(() => import('./pages/admin/AdminLogin'))
+const AdminDashboard      = lazy(() => import('./pages/admin/AdminDashboard'))
+const AdminNotifications  = lazy(() => import('./pages/admin/AdminNotifications'))
+const AdminExams          = lazy(() => import('./pages/admin/AdminExams'))
+const AdminCurrentAffairs = lazy(() => import('./pages/admin/AdminCurrentAffairs'))
+const AdminPapers         = lazy(() => import('./pages/admin/AdminPapers'))
+const AdminDrafts         = lazy(() => import('./pages/admin/AdminDrafts'))
+const AdminQuestions      = lazy(() => import('./pages/admin/AdminQuestions'))
 // Phase 5: heavier admin-only monitoring page — lazy-loaded to keep main bundle small
 const AdminAutomation = lazy(() => import('./pages/admin/AdminAutomation'))
 // Phase 6: heavier planner page — lazy-loaded to keep main bundle small
@@ -82,6 +84,7 @@ function NotFound() {
 
 export default function App() {
   return (
+    <Suspense fallback={<Spinner />}>
     <Routes>
       {/* ── Public routes ── */}
       <Route path="/"               element={<Home />} />
@@ -103,7 +106,7 @@ export default function App() {
       {/* ── Student protected routes ── */}
       <Route path="/dashboard" element={<AuthRoute><StudentDashboard /></AuthRoute>} />
       <Route path="/mock-tests/attempts" element={<AuthRoute><MockAttempts /></AuthRoute>} />
-      <Route path="/study-planner" element={<AuthRoute><Suspense fallback={<Spinner />}><StudyPlanner /></Suspense></AuthRoute>} />
+      <Route path="/study-planner" element={<AuthRoute><StudyPlanner /></AuthRoute>} />
 
       {/* ── Admin routes — require is_admin = true ── */}
       <Route path="/admin/login"           element={<AdminLogin />} />
@@ -114,10 +117,11 @@ export default function App() {
       <Route path="/admin/papers"          element={<AdminRoute><AdminPapers /></AdminRoute>} />
       <Route path="/admin/drafts"          element={<AdminRoute><AdminDrafts /></AdminRoute>} />
       <Route path="/admin/questions"       element={<AdminRoute><AdminQuestions /></AdminRoute>} />
-      <Route path="/admin/automation"      element={<AdminRoute><Suspense fallback={<Spinner />}><AdminAutomation /></Suspense></AdminRoute>} />
+      <Route path="/admin/automation"      element={<AdminRoute><AdminAutomation /></AdminRoute>} />
 
       {/* ── Fix #11: 404 catch-all ── */}
       <Route path="*" element={<NotFound />} />
     </Routes>
+    </Suspense>
   )
 }
