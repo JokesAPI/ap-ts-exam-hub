@@ -8,7 +8,7 @@ import { useExam } from '../../context/ExamContext'
 import {
   Brain, FileText, BarChart2, Trophy, Clock, Star, LogOut, User, Zap,
   BookOpen, Crown, Bookmark, Newspaper, TrendingUp, Target, Medal,
-  PlayCircle, Trash2, ChevronRight, Sparkles
+  PlayCircle, Trash2, ChevronRight, Sparkles, CalendarDays
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { loadSession } from '../../lib/testSession'
@@ -74,6 +74,7 @@ export default function StudentDashboard() {
   const [leaderboard, setLeaderboard] = useState([])
   const [bookmarks,   setBookmarks]   = useState([])   // [{bookmark, article}]
   const [latestCA,    setLatestCA]    = useState([])
+  const [studyPlan,   setStudyPlan]   = useState(null)  // { plan, tasks } | null
   const [loading,     setLoading]     = useState(true)
 
   useEffect(() => {
@@ -81,7 +82,7 @@ export default function StudentDashboard() {
     let cancelled = false
 
     async function loadAll() {
-      const [resQ, lbQ, bmQ, caQ] = await Promise.all([
+      const [resQ, lbQ, bmQ, caQ, spQ] = await Promise.all([
         supabase.from('mock_results').select('*')
           .eq('user_id', user.id).order('created_at', { ascending: false }).limit(20),
         supabase.rpc('get_leaderboard', { limit_count: 10 }),
@@ -89,12 +90,26 @@ export default function StudentDashboard() {
           .eq('user_id', user.id).order('created_at', { ascending: false }).limit(10),
         supabase.from('current_affairs').select('id, title, category, published_date')
           .order('published_date', { ascending: false }).limit(5),
+        supabase.from('study_plans').select('id, target_exam_date')
+          .eq('user_id', user.id).eq('status', 'active')
+          .order('created_at', { ascending: false }).limit(1),
       ])
       if (cancelled) return
 
       setResults(resQ.data || [])
       setLeaderboard(lbQ.data || [])
       setLatestCA(caQ.data || [])
+
+      // Study plan: pull the next few incomplete tasks (own-row RLS)
+      const activePlan = spQ.data?.[0] || null
+      if (activePlan) {
+        const { data: nextTasks } = await supabase.from('study_plan_tasks')
+          .select('id, day_number, task_type, subject, topic, estimated_minutes, completed')
+          .eq('study_plan_id', activePlan.id).eq('completed', false)
+          .order('day_number', { ascending: true }).order('sort_order', { ascending: true }).limit(4)
+        if (cancelled) return
+        setStudyPlan({ plan: activePlan, tasks: nextTasks || [] })
+      }
 
       // hydrate bookmarks (current affairs + previous papers)
       const bms   = bmQ.data || []
@@ -232,6 +247,30 @@ export default function StudentDashboard() {
 
         {/* ── Continue Study ── */}
         <h2 className="font-bold text-lg mb-4">Continue Study</h2>
+
+        {/* Today's study plan (Phase 6) */}
+        <div className="card p-4 mb-4 border-2 border-primary-100 dark:border-primary-900/40">
+          <div className="flex items-center justify-between mb-2">
+            <p className="font-semibold text-sm flex items-center gap-2"><CalendarDays className="h-4 w-4 text-primary-600" /> Today's Study Plan</p>
+            <Link to="/study-planner" className="text-xs text-primary-600 font-medium hover:underline">Open planner →</Link>
+          </div>
+          {studyPlan && studyPlan.tasks.length > 0 ? (
+            <div className="space-y-1.5">
+              {studyPlan.tasks.map(t => (
+                <div key={t.id} className="text-sm text-gray-600 dark:text-gray-300 flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary-500 flex-shrink-0" />
+                  <span className="capitalize">{t.task_type.replace(/_/g, ' ')}</span>
+                  {t.subject && <span className="text-gray-400">· {t.subject}</span>}
+                  {t.estimated_minutes && <span className="text-gray-400 text-xs ml-auto">{t.estimated_minutes}m</span>}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500">
+              No active plan. <Link to="/study-planner" className="text-primary-600 underline">Create a personalized study plan</Link> based on your exam and weak subjects.
+            </p>
+          )}
+        </div>
         {(() => {
           const unfinished = loadSession()
           if (!unfinished) return null
@@ -273,6 +312,7 @@ export default function StudentDashboard() {
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 mb-8">
           {[
             { to: '/genius-ai',       icon: Brain,    label: 'Genius AI' },
+            { to: '/study-planner',   icon: CalendarDays, label: 'Study Planner' },
             { to: '/mock-tests',      icon: FileText, label: 'Mock Tests' },
             { to: '/daily-quiz',      icon: Zap,      label: 'Daily Quiz' },
             { to: '/current-affairs', icon: BookOpen, label: 'Current Affairs' },

@@ -2,6 +2,33 @@
 
 ## [Unreleased] — v2-development
 
+### 2026-07-10 — Phase 6: AI Study Planner
+
+**Database (reconciled from production; migration byte-identical + rollback)**
+- `20260709123533_phase6_study_planner`: normalized `study_plans` +
+  `study_plan_tasks` with own-row RLS (tasks authorized via parent plan;
+  no `user_id` on tasks). anon revoked.
+
+**Added**
+- `/study-planner` (lazy-loaded, ~11.86 kB chunk): AI-generated day-by-day
+  plan from selected exam, exam date, daily hours, and weak subjects (real
+  `mock_results`); list + calendar views, task completion, progress %,
+  streak, days-to-exam, next milestone, regenerate.
+- `src/lib/studyPlanner.js`: generation via existing `callGroq` abstraction;
+  reuses `mockStats`; inserts tasks with `study_plan_id` only.
+- Dashboard: "Today's Study Plan" card + Study Planner quick action.
+
+**Fixed**
+- Dashboard runtime ReferenceError: `setStudyPlan` was called without a
+  `useState` declaration (would crash the dashboard for logged-in users).
+
+**Reconciliation:** removed a conflicting local migration that assumed
+`study_plan_tasks.user_id`; aligned repo to the single production Phase 6
+migration; removed a duplicate planner util.
+
+**Security:** own-row RLS (parent-plan model), route behind AuthRoute, Groq
+server-side. **Performance:** no new deps; planner code-split.
+
 ### 2026-07-09 — Phase 5: Previous Papers (PYQ) system completion
 
 **Added**

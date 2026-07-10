@@ -32,6 +32,8 @@ import AdminDrafts         from './pages/admin/AdminDrafts'
 import AdminQuestions      from './pages/admin/AdminQuestions'
 // Phase 5: heavier admin-only monitoring page — lazy-loaded to keep main bundle small
 const AdminAutomation = lazy(() => import('./pages/admin/AdminAutomation'))
+// Phase 6: heavier planner page — lazy-loaded to keep main bundle small
+const StudyPlanner = lazy(() => import('./pages/public/StudyPlanner'))
 
 // ── Loading spinner ────────────────────────────────────────────────────────────
 function Spinner() {
@@ -101,6 +103,7 @@ export default function App() {
       {/* ── Student protected routes ── */}
       <Route path="/dashboard" element={<AuthRoute><StudentDashboard /></AuthRoute>} />
       <Route path="/mock-tests/attempts" element={<AuthRoute><MockAttempts /></AuthRoute>} />
+      <Route path="/study-planner" element={<AuthRoute><Suspense fallback={<Spinner />}><StudyPlanner /></Suspense></AuthRoute>} />
 
       {/* ── Admin routes — require is_admin = true ── */}
       <Route path="/admin/login"           element={<AdminLogin />} />
