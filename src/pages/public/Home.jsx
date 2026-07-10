@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { Helmet } from 'react-helmet-async'
-import { Bell, FileText, Newspaper, FileArchive, ArrowRight, TrendingUp, Brain, BarChart2, CheckCircle } from 'lucide-react'
+import { Bell, FileText, Newspaper, FileArchive, ArrowRight, TrendingUp, Brain, BarChart2, CheckCircle, Download, Clock } from 'lucide-react'
 import Layout from '../../components/Layout'
 import { supabase } from '../../lib/supabase'
 
@@ -34,6 +34,13 @@ export default function Home() {
   const [notifError,    setNotifError]    = useState(false)
   const [examsError,    setExamsError]    = useState(false)
 
+  // Phase 2: additional live sections (existing anon-readable tables only)
+  const [currentAffairs, setCurrentAffairs] = useState(null) // null = loading
+  const [papers,         setPapers]         = useState(null)
+  const [popularExams,   setPopularExams]   = useState(null)
+  const [caError,        setCaError]        = useState(false)
+  const [papersError,    setPapersError]    = useState(false)
+
   useEffect(() => {
     let mounted = true
 
@@ -62,8 +69,62 @@ export default function Home() {
       })
       .catch(err => { if (mounted) { console.error(err); setExamsError(true) } })
 
+    // Phase 2: Latest Current Affairs (anon-readable, published implicitly by publish workflow)
+    supabase
+      .from('current_affairs')
+      .select('id, title, category, published_date')
+      .order('published_date', { ascending: false })
+      .limit(5)
+      .then(({ data, error }) => {
+        if (!mounted) return
+        if (error) { console.error('Current affairs error:', error); setCaError(true); setCurrentAffairs([]); return }
+        setCurrentAffairs(data || [])
+      })
+      .catch(err => { if (mounted) { console.error(err); setCaError(true); setCurrentAffairs([]) } })
+
+    // Phase 2: Previous Papers (latest by year)
+    supabase
+      .from('previous_papers')
+      .select('id, title, organization, year, subject, pdf_url')
+      .order('year', { ascending: false })
+      .limit(5)
+      .then(({ data, error }) => {
+        if (!mounted) return
+        if (error) { console.error('Papers error:', error); setPapersError(true); setPapers([]); return }
+        setPapers(data || [])
+      })
+      .catch(err => { if (mounted) { console.error(err); setPapersError(true); setPapers([]) } })
+
+    // Phase 2: Popular Exams (active, by display order — no hardcoded cards)
+    supabase
+      .from('exams')
+      .select('id, title, organization, slug, is_active, display_order')
+      .eq('is_active', true)
+      .order('display_order', { ascending: true })
+      .limit(8)
+      .then(({ data, error }) => {
+        if (!mounted) return
+        if (error) { console.error('Popular exams error:', error); setPopularExams([]); return }
+        setPopularExams(data || [])
+      })
+      .catch(err => { if (mounted) { console.error(err); setPopularExams([]) } })
+
     return () => { mounted = false }
   }, [])
+
+  // Phase 2: "Recently Added" — unified newest-first feed derived from data we
+  // already fetched (no extra Supabase call, no duplicate requests).
+  const recentlyAdded = useMemo(() => {
+    const items = []
+    for (const n of notifications || []) items.push({ id: `n-${n.id}`, type: 'Notification', icon: Bell, title: n.title, date: n.created_at, to: '/notifications' })
+    for (const e of exams || []) items.push({ id: `e-${e.id}`, type: 'Exam', icon: FileText, title: e.title, date: e.exam_date, to: '/exams' })
+    for (const c of currentAffairs || []) items.push({ id: `c-${c.id}`, type: 'Current Affairs', icon: Newspaper, title: c.title, date: c.published_date, to: '/current-affairs' })
+    for (const p of papers || []) items.push({ id: `p-${p.id}`, type: 'Previous Paper', icon: FileArchive, title: p.title, date: p.year ? `${p.year}-01-01` : null, to: '/previous-papers' })
+    return items
+      .filter(i => i.date)
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .slice(0, 8)
+  }, [notifications, exams, currentAffairs, papers])
 
   return (
     <Layout>
@@ -221,6 +282,139 @@ export default function Home() {
                     </span>
                   </li>
                 ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Phase 2: Latest Current Affairs + Previous Papers ── */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-16">
+        <div className="grid md:grid-cols-2 gap-8">
+
+          {/* Latest Current Affairs */}
+          <div className="card p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-bold text-lg flex items-center gap-2">
+                <Newspaper className="h-5 w-5 text-green-500" /> Latest Current Affairs
+              </h2>
+              <Link to="/current-affairs" className="text-primary-600 text-sm font-medium hover:underline">View all</Link>
+            </div>
+            {currentAffairs === null ? (
+              <ul className="space-y-3">{[0,1,2,3,4].map(i => <li key={i} className="h-10 bg-gray-100 dark:bg-gray-800 rounded animate-pulse" />)}</ul>
+            ) : caError ? (
+              <p className="text-red-400 text-sm">Could not load current affairs. Please refresh.</p>
+            ) : currentAffairs.length === 0 ? (
+              <p className="text-gray-400 text-sm">No current affairs published yet.</p>
+            ) : (
+              <ul className="space-y-3">
+                {currentAffairs.map(c => (
+                  <li key={c.id} className="border-l-2 border-green-400 pl-3">
+                    <p className="text-sm font-medium leading-snug">{c.title}</p>
+                    <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-2">
+                      {c.category && <span className="badge bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-[10px]">{c.category}</span>}
+                      {safeDate(c.published_date)}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* Previous Papers */}
+          <div className="card p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-bold text-lg flex items-center gap-2">
+                <FileArchive className="h-5 w-5 text-purple-500" /> Previous Papers
+              </h2>
+              <Link to="/previous-papers" className="text-primary-600 text-sm font-medium hover:underline">View all</Link>
+            </div>
+            {papers === null ? (
+              <ul className="space-y-3">{[0,1,2,3,4].map(i => <li key={i} className="h-10 bg-gray-100 dark:bg-gray-800 rounded animate-pulse" />)}</ul>
+            ) : papersError ? (
+              <p className="text-red-400 text-sm">Could not load papers. Please refresh.</p>
+            ) : papers.length === 0 ? (
+              <p className="text-gray-400 text-sm">No previous papers yet.</p>
+            ) : (
+              <ul className="space-y-3">
+                {papers.map(p => (
+                  <li key={p.id} className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{p.title}</p>
+                      <p className="text-xs text-gray-400">{p.organization}{p.year ? ` · ${p.year}` : ''}</p>
+                    </div>
+                    {p.pdf_url && (
+                      <a href={p.pdf_url} target="_blank" rel="noopener noreferrer"
+                        className="flex-shrink-0 p-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors" title="Download">
+                        <Download className="h-3.5 w-3.5" />
+                      </a>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Phase 2: Popular Exams + Recently Added ── */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-16">
+        <div className="grid md:grid-cols-2 gap-8">
+
+          {/* Popular Exams (live from exams table, no hardcoded cards) */}
+          <div className="card p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-bold text-lg flex items-center gap-2">
+                <TrendingUp className="h-5 w-5 text-orange-500" /> Popular Exams
+              </h2>
+              <Link to="/exams" className="text-primary-600 text-sm font-medium hover:underline">View all</Link>
+            </div>
+            {popularExams === null ? (
+              <div className="grid grid-cols-2 gap-2">{[0,1,2,3,4,5].map(i => <div key={i} className="h-9 bg-gray-100 dark:bg-gray-800 rounded animate-pulse" />)}</div>
+            ) : popularExams.length === 0 ? (
+              <p className="text-gray-400 text-sm">No exams listed yet.</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                {popularExams.map(e => (
+                  <Link key={e.id} to="/exams"
+                    className="flex items-center gap-2 p-2.5 rounded-lg bg-gray-50 dark:bg-gray-800/50 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors text-sm">
+                    <CheckCircle className="h-3.5 w-3.5 text-primary-500 flex-shrink-0" />
+                    <span className="truncate">{e.title}</span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Recently Added (unified feed, derived from fetched data) */}
+          <div className="card p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-bold text-lg flex items-center gap-2">
+                <Clock className="h-5 w-5 text-blue-500" /> Recently Added
+              </h2>
+            </div>
+            {(notifications.length === 0 && currentAffairs === null && papers === null) ? (
+              <ul className="space-y-3">{[0,1,2,3,4].map(i => <li key={i} className="h-10 bg-gray-100 dark:bg-gray-800 rounded animate-pulse" />)}</ul>
+            ) : recentlyAdded.length === 0 ? (
+              <p className="text-gray-400 text-sm">No recent content yet.</p>
+            ) : (
+              <ul className="space-y-2.5">
+                {recentlyAdded.map(item => {
+                  const Icon = item.icon
+                  return (
+                    <li key={item.id}>
+                      <Link to={item.to} className="flex items-center gap-3 group">
+                        <span className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center flex-shrink-0">
+                          <Icon className="h-3.5 w-3.5 text-primary-600" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-medium truncate group-hover:text-primary-600">{item.title}</span>
+                          <span className="block text-xs text-gray-400">{item.type} · {safeDate(item.date)}</span>
+                        </span>
+                      </Link>
+                    </li>
+                  )
+                })}
               </ul>
             )}
           </div>
