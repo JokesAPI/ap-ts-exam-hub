@@ -27,7 +27,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'AI not configured' });
     }
 
-    const MODEL = process.env.OPENAI_MODEL || 'gpt-5.5';
+    const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
     const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',

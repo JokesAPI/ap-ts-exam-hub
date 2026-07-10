@@ -25,7 +25,7 @@ no UI redesign, no new required env vars beyond `OPENAI_API_KEY` /
 
 **Backend (`api/groq-chat.js`)** — now calls
 `https://api.openai.com/v1/chat/completions` with `process.env.OPENAI_API_KEY`
-and `const MODEL = process.env.OPENAI_MODEL || 'gpt-5.5'`. Uses
+and `const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini'`. Uses
 `max_completion_tokens` (newer OpenAI models). **Route path kept as
 `/api/groq-chat`** for backward compatibility — the frontend contract
 (`{ system, messages }` → `{ reply }`) is unchanged. Error log tag → `ai-chat`.
@@ -38,7 +38,7 @@ and `const MODEL = process.env.OPENAI_MODEL || 'gpt-5.5'`. Uses
 "with AI". No other UI changes.
 
 **Python (`generate_current_affairs_v2.py`)** — `OPENAI_API_KEY`,
-`OPENAI_MODEL = os.environ.get('OPENAI_MODEL', 'gpt-5.5')`, endpoint →
+`OPENAI_MODEL = os.environ.get('OPENAI_MODEL', 'gpt-4o-mini')`, endpoint →
 OpenAI, `call_groq`→`call_ai`, `GROQ_MAX_RETRIES`→`AI_MAX_RETRIES`,
 `ai_model` tag → `openai/{model}`. Retry/parse logic unchanged.
 
@@ -47,7 +47,7 @@ app; documented as dormant).
 
 ## Model configuration
 
-`process.env.OPENAI_MODEL || 'gpt-5.5'` everywhere (backend, edge fn, Python).
+`process.env.OPENAI_MODEL || 'gpt-4o-mini'` everywhere (backend, edge fn, Python).
 The exact GPT-5.5 API string could not be verified at authoring time; the env
 var lets you override without a code change if the identifier differs.
 

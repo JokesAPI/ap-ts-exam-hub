@@ -51,7 +51,7 @@ ALLOWED_CATEGORIES = [
     'Science & Tech', 'Sports', 'Awards', 'International',
 ]
 
-OPENAI_MODEL = os.environ.get('OPENAI_MODEL', 'gpt-5.5')
+OPENAI_MODEL = os.environ.get('OPENAI_MODEL', 'gpt-4o-mini')
 AI_MAX_RETRIES = 2            # total attempts = 1 + AI_MAX_RETRIES
 
 # Fuzzy-title duplicate policy:

@@ -40,7 +40,7 @@ Deno.serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: Deno.env.get('OPENAI_MODEL') || 'gpt-5.5',
+        model: Deno.env.get('OPENAI_MODEL') || 'gpt-4o-mini',
         max_completion_tokens: 1500,
         temperature: 0.7,
         messages: [

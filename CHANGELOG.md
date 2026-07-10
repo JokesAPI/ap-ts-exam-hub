@@ -6,7 +6,7 @@
 
 **Changed**
 - Backend `api/groq-chat.js` now calls OpenAI Chat Completions
-  (`OPENAI_API_KEY`, `OPENAI_MODEL || 'gpt-5.5'`, `max_completion_tokens`).
+  (`OPENAI_API_KEY`, `OPENAI_MODEL || 'gpt-4o-mini'`, `max_completion_tokens`).
   Route path kept as `/api/groq-chat`; request/response contract
   (`{system,messages}`→`{reply}`) unchanged.
 - Helper is `src/lib/ai.js` (`callAI`); consumers (studyPlanner,
