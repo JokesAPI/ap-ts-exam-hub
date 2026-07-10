@@ -17,7 +17,7 @@ Four options were compared for running the collector every morning:
 ## What runs, and when
 
 The workflow runs the **existing, unmodified pipeline**:
-`RSS → normalize → check_duplicate_draft() → Groq → ai_drafts →
+`RSS → normalize → check_duplicate_draft() → OpenAI → ai_drafts →
 validate_draft() → ai_draft_logs / automation_runs / automation_dead_letter`.
 Nothing is published without admin review, exactly as before.
 
@@ -38,7 +38,7 @@ Nothing is published without admin review, exactly as before.
 | Logs every execution | GitHub run logs + one `automation_runs` row per executed run (a lock-skipped invocation logs to GitHub; the in-flight run owns the DB row) | Both |
 | Updates automation_runs | Existing `finish_run()` in a `finally` block (unchanged) | Collector |
 | Dead-letter support | Existing per-item `automation_dead_letter` insert (unchanged) | Collector |
-| Retry support | Groq calls: 2 bounded retries (existing). Whole run: one automatic workflow retry after 90 s | Both |
+| Retry support | OpenAI calls: 2 bounded retries (existing). Whole run: one automatic workflow retry after 90 s | Both |
 | Timeout handling | `timeout-minutes: 15` kills a hung job; `begin_automation_run()` sweeps runs unfinished > 30 min to `success=false` (`marked stale…`) so a killed job can never deadlock the pipeline | Both |
 | Notifications on failure | GitHub's built-in failure email **plus** an issue titled *"Automation failure: current-affairs pipeline"* (deduplicated: comments on the open one instead of piling up) | GitHub |
 | Zero duplicate generation | Existing `check_duplicate_draft()` (hash/url/pg_trgm) **before** AI spend; the concurrency guard removes the only race that could bypass it. Re-runs and retries are idempotent by `source_hash` | DB |
@@ -70,7 +70,7 @@ Add three **Actions secrets** (same values the collector already uses):
 
 | Secret | Value |
 |---|---|
-| `GROQ_API_KEY` | Groq API key |
+| `OPENAI_API_KEY` | OpenAI API key |
 | `SUPABASE_URL` | `https://ijqdjlkzcygfjkmciqyy.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service-role key (server-side only — this is exactly the sanctioned home for it) |
 

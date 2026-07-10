@@ -1,4 +1,7 @@
-export async function callGroq(systemPrompt, messages) {
+// Provider-neutral AI helper. The frontend only knows callAI(); the actual
+// provider (OpenAI) lives server-side in /api/groq-chat. Request/response
+// contract is unchanged: send { system, messages }, receive { reply }.
+export async function callAI(systemPrompt, messages) {
   const res = await fetch('/api/groq-chat', {
     method: 'POST',
     headers: {
@@ -12,7 +15,7 @@ export async function callGroq(systemPrompt, messages) {
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error(err.error || `Groq error: ${res.status}`)
+    throw new Error(err.error || `AI error: ${res.status}`)
   }
 
   const data = await res.json()

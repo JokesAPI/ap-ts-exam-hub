@@ -1,10 +1,10 @@
 // ── AI Study Planner (Phase 6) ───────────────────────────────────────────────
-// Generates a personalized study plan using the existing server-side Groq
-// backend (src/lib/groq.js). Reuses mockStats (weak subjects, recommendations)
+// Generates a personalized study plan using the existing server-side AI
+// backend (src/lib/ai.js). Reuses mockStats (weak subjects, recommendations)
 // and writes to the normalized study_plans / study_plan_tasks tables (own-row
-// RLS). No provider-specific logic beyond callGroq.
+// RLS). No provider-specific logic beyond callAI.
 
-import { callGroq } from './groq'
+import { callAI } from './ai'
 import { supabase } from './supabase'
 import { aggregateSubjects } from './mockStats'
 
@@ -61,7 +61,7 @@ export async function generateAndSavePlan({ user, exam, dailyMinutes, mockResult
 
   const { weak, strong } = deriveSubjects(mockResults || [])
   const prompt = buildPlannerPrompt({ examTitle: exam?.title, days: cappedDays, dailyMinutes, weak, strong })
-  const raw = await callGroq(PLANNER_SYSTEM, [{ role: 'user', content: prompt }])
+  const raw = await callAI(PLANNER_SYSTEM, [{ role: 'user', content: prompt }])
   const planDays = parsePlan(raw)
 
   // archive existing active plans (one active plan per user)

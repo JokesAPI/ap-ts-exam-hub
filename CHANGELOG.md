@@ -2,6 +2,27 @@
 
 ## [Unreleased] — v2-development
 
+### 2026-07-10 — AI provider migration: Groq → OpenAI
+
+**Changed**
+- Backend `api/groq-chat.js` now calls OpenAI Chat Completions
+  (`OPENAI_API_KEY`, `OPENAI_MODEL || 'gpt-5.5'`, `max_completion_tokens`).
+  Route path kept as `/api/groq-chat`; request/response contract
+  (`{system,messages}`→`{reply}`) unchanged.
+- Helper is `src/lib/ai.js` (`callAI`); consumers (studyPlanner,
+  aiQuestionGen, GeniusAI, MockTests) use `callAI`. No duplicate helpers.
+- Python `generate_current_affairs_v2.py` → OpenAI (`OPENAI_API_KEY`,
+  `OPENAI_MODEL`, `call_ai`, `AI_MAX_RETRIES`, `ai_model=openai/…`).
+- Branding: "Powered by Groq AI" → "Powered by OpenAI"; removed stale
+  `VITE_GROQ_API_KEY` error hint; "with Groq" → "with AI".
+- Dormant Supabase edge fn aligned to OpenAI (still unused).
+
+**Unchanged:** no DB migrations/schema, no UI redesign, no new required env
+vars, lazy loading preserved, bundle size unchanged.
+
+**Security:** no keys/endpoints in frontend (0 refs); server-side only; no
+service-role exposure.
+
 ### 2026-07-10 — Phase 6: AI Study Planner
 
 **Database (reconciled from production; migration byte-identical + rollback)**

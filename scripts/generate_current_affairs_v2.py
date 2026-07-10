@@ -4,7 +4,7 @@ generate_current_affairs_v2.py — Current Affairs Collector (pipeline-integrate
 This collector does NOT write to current_affairs directly.
 
 Flow:  RSS collect → normalize (+source_hash) → duplicate detection
-       (check_duplicate_draft, pg_trgm) → grounded Groq generation →
+       (check_duplicate_draft, pg_trgm) -> grounded OpenAI generation ->
        ai_drafts (status='draft') → validate_draft() quality gate →
        existing admin review workflow → publish_draft() → current_affairs.
 
@@ -18,7 +18,7 @@ USAGE:
   python generate_current_affairs_v2.py --count 5
 
 REQUIRED ENVIRONMENT VARIABLES:
-  GROQ_API_KEY
+  OPENAI_API_KEY
   SUPABASE_URL                e.g. https://ijqdjlkzcygfjkmciqyy.supabase.co
   SUPABASE_SERVICE_ROLE_KEY   server-side only; RLS on pipeline tables is
                               admin-or-nothing, so the collector must run
@@ -51,8 +51,8 @@ ALLOWED_CATEGORIES = [
     'Science & Tech', 'Sports', 'Awards', 'International',
 ]
 
-GROQ_MODEL = 'llama-3.3-70b-versatile'
-GROQ_MAX_RETRIES = 2          # total attempts = 1 + GROQ_MAX_RETRIES
+OPENAI_MODEL = os.environ.get('OPENAI_MODEL', 'gpt-5.5')
+AI_MAX_RETRIES = 2            # total attempts = 1 + AI_MAX_RETRIES
 
 # Fuzzy-title duplicate policy:
 #   similarity >= HARD threshold  -> skip item entirely
@@ -252,27 +252,27 @@ Respond ONLY with valid JSON in this exact structure, nothing else:
 Return exactly {count} items in the "items" array. No text before or after the JSON."""
 
 
-def call_groq(prompt: str, retry_counter: List[int]) -> dict:
+def call_ai(prompt: str, retry_counter: List[int]) -> dict:
     """Same call as before, now with bounded retries. retry_counter[0] is
     incremented per retry so the run log records the true retry count."""
-    api_key = os.environ.get('GROQ_API_KEY')
+    api_key = os.environ.get('OPENAI_API_KEY')
     if not api_key:
-        sys.exit('ERROR: GROQ_API_KEY environment variable is not set.')
+        sys.exit('ERROR: OPENAI_API_KEY environment variable is not set.')
 
     last_err = None
-    for attempt in range(1 + GROQ_MAX_RETRIES):
+    for attempt in range(1 + AI_MAX_RETRIES):
         if attempt > 0:
             retry_counter[0] += 1
             wait = 5 * attempt
-            print(f'  Groq retry {attempt}/{GROQ_MAX_RETRIES} in {wait}s...')
+            print(f'  AI retry {attempt}/{AI_MAX_RETRIES} in {wait}s...')
             time.sleep(wait)
         try:
             response = requests.post(
-                'https://api.groq.com/openai/v1/chat/completions',
+                'https://api.openai.com/v1/chat/completions',
                 headers={'Authorization': f'Bearer {api_key}',
                          'Content-Type': 'application/json'},
                 json={
-                    'model': GROQ_MODEL,
+                    'model': OPENAI_MODEL,
                     'temperature': 0.3,
                     'response_format': {'type': 'json_object'},
                     'messages': [
@@ -287,13 +287,13 @@ def call_groq(prompt: str, retry_counter: List[int]) -> dict:
                 timeout=90,
             )
             if not response.ok:
-                raise RuntimeError(f'Groq HTTP {response.status_code}: {response.text[:300]}')
+                raise RuntimeError(f'OpenAI HTTP {response.status_code}: {response.text[:300]}')
             raw_text = response.json()['choices'][0]['message']['content']
             return json.loads(raw_text)
         except (RuntimeError, requests.RequestException, json.JSONDecodeError,
                 KeyError) as e:
             last_err = e
-    raise RuntimeError(f'Groq failed after {GROQ_MAX_RETRIES} retries: {last_err}')
+    raise RuntimeError(f'OpenAI failed after {AI_MAX_RETRIES} retries: {last_err}')
 
 
 def validate_and_normalize(item: dict) -> Optional[dict]:
@@ -370,7 +370,7 @@ def create_draft(supa: Supa, item: dict, meta: dict) -> tuple:
         'source_hash': meta['source_hash'],
         'source_type': CONNECTOR_TYPE,
         'collected_at': datetime.now(timezone.utc).isoformat(),
-        'ai_model': f'groq/{GROQ_MODEL}',
+        'ai_model': f'openai/{OPENAI_MODEL}',
         'confidence_score': (FLAGGED_CONFIDENCE if meta.get('duplicate_warning')
                              else BASE_CONFIDENCE),
         'status': 'draft',
@@ -380,7 +380,7 @@ def create_draft(supa: Supa, item: dict, meta: dict) -> tuple:
         'draft_id': draft['id'],
         'event': 'ai_generated',
         'actor': 'collector:generate_current_affairs_v2',
-        'details': {'model': GROQ_MODEL, 'source': SOURCE_NAME},
+        'details': {'model': OPENAI_MODEL, 'source': SOURCE_NAME},
     })
 
     failures = supa.rpc('validate_draft', {'p_draft_id': draft['id']}) or []
@@ -504,7 +504,7 @@ def main():
         # 4. AI generation (grounded)
         want = min(args.count, len(survivors))
         t0 = time.monotonic()
-        result = call_groq(build_prompt(survivors, want), retry_counter)
+        result = call_ai(build_prompt(survivors, want), retry_counter)
         stats['ai_ms'] = int((time.monotonic() - t0) * 1000)
         stats['retries'] = retry_counter[0]
 

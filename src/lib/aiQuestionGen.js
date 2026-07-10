@@ -1,11 +1,11 @@
 // ── AI Question Generation (Phase 4) ─────────────────────────────────────────
-// Reuses the existing server-side Groq backend (src/lib/groq.js → /api/groq-chat,
+// Reuses the existing server-side AI backend (src/lib/ai.js -> /api/groq-chat,
 // key stays server-side). Generates competitive-exam MCQs as structured JSON and
 // inserts them into ai_drafts as content_type='questions', status='draft'.
 // NOTHING is published here — everything flows through the existing AdminDrafts
 // review queue (validate → approve → publish).
 
-import { callGroq } from './groq'
+import { callAI } from './ai'
 import { supabase } from './supabase'
 
 const QUESTION_SYSTEM = `You are an expert question setter for Indian competitive government exams (APPSC, TGPSC, SSC, RRB, Banking, TG DSC, AP/TG Police, EAPCET).
@@ -64,7 +64,7 @@ export function checkQuestion(q) {
 // examSlug is optional and stored in json_data for publish-time exam linkage.
 export async function generateQuestionDrafts({ count, exam, examSlug, subject, topic, sourceText }) {
   const prompt = buildQuestionPrompt({ count, exam, subject, topic, sourceText })
-  const raw = await callGroq(QUESTION_SYSTEM, [{ role: 'user', content: prompt }])
+  const raw = await callAI(QUESTION_SYSTEM, [{ role: 'user', content: prompt }])
   const parsed = parseQuestions(raw)
 
   const rows = []
@@ -123,7 +123,7 @@ C) ${question.option_c}
 D) ${question.option_d}
 Correct answer: ${question.correct_answer}
 Return ONLY the JSON object.`
-  const raw = await callGroq(EXPLANATION_SYSTEM, [{ role: 'user', content: user }])
+  const raw = await callAI(EXPLANATION_SYSTEM, [{ role: 'user', content: user }])
   let text = (raw || '').trim().replace(/^```(?:json)?/i,'').replace(/```$/,'').trim()
   const s = text.indexOf('{'), e = text.lastIndexOf('}')
   if (s === -1 || e === -1) throw new Error('AI did not return a JSON object')

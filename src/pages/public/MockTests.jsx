@@ -3,7 +3,7 @@ import { Helmet } from 'react-helmet-async'
 import { useNavigate } from 'react-router-dom'
 import Layout from '../../components/Layout'
 import { FileText, Clock, Users, Lock, CheckCircle, Star, ArrowRight, RotateCcw, Trophy, XCircle, ChevronRight, Loader, PlayCircle, History } from 'lucide-react'
-import { callGroq } from '../../lib/groq'
+import { callAI } from '../../lib/ai'
 import { loadSession, clearSession } from '../../lib/testSession'
 import { useExam } from '../../context/ExamContext'
 
@@ -136,7 +136,7 @@ Make questions relevant to Indian government exam syllabus. Do not use markdown.
 
     try {
       const systemPrompt = `You are an expert question setter for Indian government competitive exams (APPSC, TSPSC, SSC, Police, DSC, TET). Generate high-quality MCQ questions. Always follow the exact format given. Never use ** or ## or backticks.`
-      const reply = await callGroq(systemPrompt, [{ role: 'user', content: prompt }])
+      const reply = await callAI(systemPrompt, [{ role: 'user', content: prompt }])
       const parsed = parseQuestions(reply)
       if (parsed.length < 5) throw new Error('Could not parse questions. Please try again.')
       setQuestions(parsed)

@@ -2,8 +2,9 @@
 // Supabase Edge Function: groq-chat
 // Location: supabase/functions/groq-chat/index.js
 //
-// Fix #4: Moves Groq API key server-side so it never ships in browser bundle
-// Frontend calls this function instead of calling Groq directly
+// Moves the AI API key server-side so it never ships in the browser bundle.
+// NOTE: dormant — the app calls the Vercel route /api/groq-chat, not this.
+// Kept in sync with the OpenAI provider for consistency.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const corsHeaders = {
@@ -24,23 +25,23 @@ Deno.serve(async (req) => {
       )
     }
 
-    const groqKey = Deno.env.get('GROQ_API_KEY')
-    if (!groqKey) {
+    const apiKey = Deno.env.get('OPENAI_API_KEY')
+    if (!apiKey) {
       return new Response(
-        JSON.stringify({ error: 'Groq not configured' }),
+        JSON.stringify({ error: 'AI not configured' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${groqKey}`,
+        'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
-        max_tokens: 1500,
+        model: Deno.env.get('OPENAI_MODEL') || 'gpt-5.5',
+        max_completion_tokens: 1500,
         temperature: 0.7,
         messages: [
           ...(system ? [{ role: 'system', content: system }] : []),
@@ -51,7 +52,7 @@ Deno.serve(async (req) => {
 
     if (!response.ok) {
       const err = await response.json()
-      throw new Error(err.error?.message || 'Groq API error')
+      throw new Error(err.error?.message || 'AI API error')
     }
 
     const data = await response.json()
@@ -63,7 +64,7 @@ Deno.serve(async (req) => {
     )
 
   } catch (err) {
-    console.error('groq-chat error:', err)
+    console.error('ai-chat error:', err)
     return new Response(
       JSON.stringify({ error: err.message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

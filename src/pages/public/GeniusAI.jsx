@@ -7,7 +7,7 @@ import {
   Briefcase, MessageSquare, Calendar, TrendingUp,
   ChevronRight, Globe, ArrowRight, RotateCcw, Loader2
 } from 'lucide-react'
-import { callGroq } from '../../lib/groq'
+import { callAI } from '../../lib/ai'
 import { useAuth } from '../../context/AuthContext'
 
 // ── Free tier limits ─────────────────────────────────────────────────────────
@@ -276,7 +276,7 @@ export default function GeniusAI() {
     loadingRef.current = true
 
     try {
-      const reply = await callGroq(buildSystem(tab, finalLang), withUser.slice(-10))
+      const reply = await callAI(buildSystem(tab, finalLang), withUser.slice(-10))
       const clean = stripMd(reply)
       // Detect reply language
       const replyLang = detectScript(clean)
@@ -286,7 +286,7 @@ export default function GeniusAI() {
       speakText(clean, useLang)
     } catch (err) {
       console.error(err)
-      setError(err.message.includes('API') ? 'API key error. Check VITE_GROQ_API_KEY in Vercel settings.' : 'Something went wrong. Please try again.')
+      setError(err.message.includes('API') ? 'AI service error. Please try again later.' : 'Something went wrong. Please try again.')
       addMsg(tab, [...withUser, { role: 'assistant', content: 'Sorry, I encountered an error. Please try again.' }])
     }
 
@@ -321,7 +321,7 @@ export default function GeniusAI() {
         ', Biggest challenge=' + (answers[4] || '?') +
         '. Give detailed personalized weakness analysis.'
       try {
-        const reply = await callGroq(buildSystem('weakness', currentLang), [{ role: 'user', content: summary }])
+        const reply = await callAI(buildSystem('weakness', currentLang), [{ role: 'user', content: summary }])
         const clean = stripMd(reply)
         const replyLang = detectScript(clean)
         const useLang   = replyLang !== 'en-US' ? replyLang : (currentLang || 'en-US')
@@ -393,7 +393,7 @@ export default function GeniusAI() {
       <section className="bg-gradient-to-br from-purple-900 via-blue-900 to-primary-700 text-white py-6 px-4">
         <div className="max-w-6xl mx-auto text-center">
           <div className="inline-flex items-center gap-2 bg-white/20 px-4 py-1.5 rounded-full text-xs font-semibold mb-3 uppercase tracking-wide">
-            <Sparkles className="h-3.5 w-3.5" /> Powered by Groq AI
+            <Sparkles className="h-3.5 w-3.5" /> Powered by OpenAI
           </div>
           <h1 className="text-3xl sm:text-4xl font-extrabold mb-1">Genius AI</h1>
           <p className="text-blue-200 text-sm mb-3">Your Personal APPSC / TSPSC Exam Mentor</p>

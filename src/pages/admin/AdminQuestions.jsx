@@ -416,7 +416,7 @@ export default function AdminQuestions() {
       <Modal open={aiModal} onClose={() => setAiModal(false)} title="AI Generate Questions" maxWidth="max-w-lg">
         <div className="space-y-3">
           <p className="text-sm text-gray-500">
-            Generates competitive-exam questions with Groq and files them as <b>drafts</b> in
+            Generates competitive-exam questions with AI and files them as <b>drafts</b> in
             the AI Drafts review queue. Nothing is published automatically — you review,
             validate, and publish there.
           </p>
