@@ -110,3 +110,136 @@ the rest of the way.
 Both designs deliberately reuse the existing architecture end-to-end and would
 be implemented as **separate collector scripts + workflows only**, in a later
 phase, with no backend changes.
+
+---
+
+# FINAL VALIDATION RECORD — Phase 3 sign-off
+
+**Status:** ✅ **Phase 3 — Production Automation Validation is complete.**
+
+**Date:** 2026-07-11
+**Validated commit (workflow + collector, `main`):** `fd497c5`
+  — `ci: enable Current Affairs Pipeline on main (workflow + runtime deps)`
+**Prerequisite fix (`v2-development`):** `d094d58`
+  — `fix(automation): pass OPENAI_API_KEY to collector workflow`
+**Model:** `gpt-4o-mini` (via `OPENAI_MODEL`; collector default)
+**Environment:** GitHub Actions (`ubuntu-latest`) → OpenAI → Supabase
+  (`ijqdjlkzcygfjkmciqyy`)
+
+> Note on branches: the workflow executes from **`main`** (GitHub schedules and
+> dispatches workflows from the default branch). `fd497c5` is therefore the SHA
+> that was actually exercised in production.
+
+## Test evidence (verified against production, not asserted)
+
+### Stage evidence
+
+| # | Claim | Status | Evidence |
+|---|---|---|---|
+| 1 | GitHub Actions workflow executed successfully | ✅ **Verified by execution** | `automation_runs`: **2 runs, both `success=true`**, `retry_count=0`, `error_message=null` |
+| 2 | RSS fetched 20 headlines | ✅ **Verified by execution** | `records_collected = 20` on **both** runs |
+| 3 | OpenAI generated validated drafts with gpt-4o-mini | ✅ **Verified by execution** | 10 drafts, **10/10** carry `ai_model = openai/gpt-4o-mini`; `ai_processing_time_ms` 20,472 / 60,701 |
+| 4 | Drafts reviewed, approved, published | ✅ **Verified by execution** | 5 drafts at `status='published'` with `reviewed_at` + `published_at` set; `ai_draft_logs` records `ai_generated` and `validated` events |
+| 5 | Published articles reached `current_affairs` + public site | ✅ **Verified by execution** | `current_affairs` = 11 rows (5 added by the pipeline); the public Current Affairs page and homepage read this table directly |
+| 6 | Automation Dashboard shows run health | ✅ **Verified by inspection** | `/admin/automation` + `/admin/drafts` health strip consume `get_automation_health()` (admin-gated RPC) |
+| 7 | SQL replay of an existing article | ✅ **Verified by execution** | Replaying a live draft's real hash/URL through `check_duplicate_draft()` returned `exact_source_hash = 1.0`, `exact_source_url = 1.0`, `similar_title = 1.0` |
+| 8 | Exact matches skipped before OpenAI; counters incremented | ✅ **Verified by inspection** | `generate_current_affairs_v2.py`: dedup runs in the survivor loop (line ~488) **before** the AI call; `exact_source_hash` / `exact_source_url` → `action='skip'` → `stats['duplicates'] += 1`. Duplicates cost **zero AI tokens** |
+| 9 | No duplicate `source_hash` values | ✅ **Verified by execution** | `select source_hash, count(*) … having count(*) > 1` → **0 rows** |
+| 10 | `duplicate_count = 0` is not evidence of failure | ✅ **Explained + corroborated** | See below |
+
+### Per-run detail (from `automation_runs`)
+
+| Started (UTC) | Duration | Success | Collected | Drafted | Duplicates | Rejected | Retries |
+|---|---|---|---|---|---|---|---|
+| 2026-07-11 09:05:34 | 32.0 s | true | 20 | 5 | 0 | 0 | 0 |
+| 2026-07-11 15:53:15 | 71.6 s | true | 20 | 5 | 0 | 0 | 0 |
+
+Dead-letter queue: **0 entries** (no per-item failures across either run).
+
+### Why `duplicate_count = 0` is correct, not a defect
+
+The Times of India top-stories feed rotates its items continuously, so the two
+runs (≈6h 48m apart) saw **entirely different headlines**. Corroboration:
+
+    10 drafts → 10 distinct source_hash
+              → 10 distinct source_url
+              → 10 distinct title
+
+Every collected item was a genuinely new story, so there was nothing to
+deduplicate. `duplicate_count = 0` is the **expected** outcome, not a failed
+check.
+
+Deduplication itself is independently proven by the item-7 SQL replay: feeding
+an existing article's real `source_hash`/`source_url` back through
+`check_duplicate_draft()` returns exact matches at similarity 1.0, and the
+collector's verdict logic skips on precisely those reasons. The mechanism is
+closed-loop (both `source_url` and `source_hash` are persisted on draft insert),
+and it is double-guarded — `check_duplicate_draft` additionally fuzzy-matches
+against the already-published `current_affairs` table.
+
+## Residual risks
+
+1. **End-to-end dedup counter never exercised live.** The DB comparison layer and
+   the collector's skip logic are each proven, but a run producing
+   `duplicate_count > 0` has not occurred, because the live feed never repeated
+   an item. To close this deterministically would require a fixed/fixture feed
+   (an additive `RSS_FEED_URL` override) — **designed, not implemented**; out of
+   Phase 3 scope.
+2. **`OPENAI_MODEL` empty-string fragility.** GitHub passes an *unset* secret as
+   an empty string, and the collector uses
+   `os.environ.get('OPENAI_MODEL', 'gpt-4o-mini')`, which returns `''` rather
+   than the default. It works today because the secret is configured; deleting
+   it would send `model: ""` and 400 every run. A one-line hardening
+   (`os.environ.get('OPENAI_MODEL') or 'gpt-4o-mini'`) would make it immune.
+3. **Single RSS source.** All content depends on one feed; a TOI outage or
+   format change halts the pipeline (it would surface as a failed run + GitHub
+   issue, not silent breakage).
+4. **Publishing is manual by design.** Drafts require an admin approve/publish;
+   nothing reaches the public site unattended. This is a safety feature, but it
+   means content flow stops if nobody reviews.
+5. **Confidence-scale inconsistency.** `automation_sources.confidence_score` is
+   on a 0–100 scale while `ai_drafts.confidence_score` is 0–1. Harmless today;
+   would matter if confidence-gated auto-publish is built later.
+6. **No pagination on the public Current Affairs page.** All rows are fetched
+   client-side; fine at 11 rows, will degrade as the daily cron accumulates
+   content.
+
+## Rollback reference
+
+| Change | Commit | Rollback |
+|---|---|---|
+| Workflow + collector on `main` | `fd497c5` | `git revert fd497c5` |
+| `OPENAI_API_KEY` workflow fix | `d094d58` | `git revert d094d58` |
+
+No database migrations were introduced by Phase 3 validation, so **rollback is
+code-only**. Published `current_affairs` rows are data, not schema; reverting
+code does not remove them. To retract published content, archive/unpublish it
+through the admin UI rather than reverting a commit.
+
+## Operational monitoring recommendations
+
+1. **Watch the dead-letter queue.** `automation_dead_letter` should stay at 0.
+   Any row is a per-item failure worth reading (`failed_at`, error payload).
+2. **Alert on consecutive failed runs.** The workflow already opens a GitHub
+   issue on failure; treat two consecutive failures as a page-worthy signal.
+3. **Track `records_collected`.** A sudden drop to 0 means the RSS feed changed
+   or broke — the earliest indicator of upstream drift.
+4. **Watch `duplicate_count` trend upward over time.** As the archive grows,
+   overlap with the feed becomes likely; a *persistently* zero counter combined
+   with rising near-identical titles would suggest dedup regression.
+5. **Review the pending-draft backlog.** Drafts accumulate until an admin acts;
+   a growing `status='draft'`/`'validated'` count means review has stalled.
+6. **Monitor OpenAI cost/latency.** `ai_processing_time_ms` already varies
+   3× between runs (20.5 s vs 60.7 s); sustained growth signals model or
+   rate-limit pressure.
+7. **Re-check the cron after any default-branch change.** GitHub schedules
+   workflows from the default branch only; moving or renaming `main` silently
+   stops the scheduler.
+
+## Formal statement
+
+**Phase 3 — Production Automation Validation is complete.**
+
+The pipeline (GitHub Actions → RSS → OpenAI `gpt-4o-mini` → `ai_drafts` →
+validation → admin review → `publish_draft` → `current_affairs` → public site)
+has been executed end-to-end in production, with every stage evidenced above.
