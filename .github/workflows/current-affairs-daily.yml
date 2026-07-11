@@ -65,7 +65,10 @@ jobs:
 
       - name: Run collector (one automatic retry)
         env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          # Collector was migrated Groq -> OpenAI; it reads OPENAI_API_KEY.
+          # OPENAI_MODEL is optional (collector defaults to gpt-4o-mini).
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           COUNT: ${{ github.event.inputs.count || '5' }}
