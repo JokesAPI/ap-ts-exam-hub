@@ -1,10 +1,122 @@
 import { useEffect, useState } from 'react'
 import { Helmet } from 'react-helmet-async'
-import { Newspaper, Search } from 'lucide-react'
+import { Newspaper, Search, ExternalLink, Eye, EyeOff } from 'lucide-react'
 import Layout from '../../components/Layout'
 import { supabase } from '../../lib/supabase'
 
 const categories = ['All', 'National', 'State AP', 'State TS', 'Economy', 'Science & Tech', 'Sports', 'Awards', 'International']
+
+// ── Content parser ───────────────────────────────────────────────────────────
+// AI-generated articles store one plain-text blob with stable markers:
+//   <english>  📝 MCQ Practice: <q + A-D + Answer + Explanation>
+//   తెలుగు సారాంశం: <telugu>   Source: <url>
+// Legacy articles have none of these markers. When nothing matches we return
+// { english: content } and the card renders exactly as before — so old rows
+// cannot break.
+function parseArticle(raw) {
+  const content = (raw || '').trim()
+  if (!content) return { english: '' }
+
+  // Source (last marker) — tolerate "Source:" with or without a scheme
+  let rest = content
+  let sourceUrl = null
+  const srcMatch = rest.match(/\n*\s*Source:\s*(\S+)\s*$/i)
+  if (srcMatch) {
+    sourceUrl = srcMatch[1].trim()
+    rest = rest.slice(0, srcMatch.index).trim()
+  }
+
+  // Telugu block
+  let telugu = null
+  const teMatch = rest.match(/తెలుగు\s*సారాంశం\s*:?/)
+  if (teMatch) {
+    telugu = rest.slice(teMatch.index + teMatch[0].length).trim()
+    rest = rest.slice(0, teMatch.index).trim()
+  }
+
+  // MCQ block
+  let mcq = null
+  const mcqMatch = rest.match(/(?:📝\s*)?MCQ\s*Practice\s*:?/i)
+  if (mcqMatch) {
+    const block = rest.slice(mcqMatch.index + mcqMatch[0].length).trim()
+    rest = rest.slice(0, mcqMatch.index).trim()
+
+    const answerM = block.match(/\n\s*Answer\s*:\s*([A-D])/i)
+    const explM = block.match(/\n\s*Explanation\s*:\s*([\s\S]*)$/i)
+
+    // options like "A) text"
+    const options = []
+    const optRe = /^\s*([A-D])\)\s*(.+)$/gm
+    let m
+    while ((m = optRe.exec(block)) !== null) options.push({ key: m[1].toUpperCase(), text: m[2].trim() })
+
+    // question = everything before the first option line
+    const firstOpt = block.search(/^\s*[A-D]\)\s*/m)
+    const question = (firstOpt > -1 ? block.slice(0, firstOpt) : block).trim()
+
+    if (question || options.length) {
+      mcq = {
+        question,
+        options,
+        answer: answerM ? answerM[1].toUpperCase() : null,
+        explanation: explM ? explM[1].trim() : null,
+      }
+    }
+  }
+
+  return { english: rest.trim(), mcq, telugu, sourceUrl }
+}
+
+// ── MCQ card (bordered, answer hidden until revealed) ─────────────────────────
+function McqCard({ mcq }) {
+  const [revealed, setRevealed] = useState(false)
+  return (
+    <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800/40 p-4">
+      <p className="text-xs font-bold uppercase tracking-wide text-primary-600 mb-2">📝 MCQ Practice</p>
+      {mcq.question && <p className="text-sm font-medium mb-3">{mcq.question}</p>}
+
+      {mcq.options.length > 0 && (
+        <ul className="space-y-1.5 mb-3">
+          {mcq.options.map(o => {
+            const isAnswer = revealed && mcq.answer === o.key
+            return (
+              <li key={o.key}
+                className={`text-sm rounded-lg px-3 py-1.5 border transition-colors ${
+                  isAnswer
+                    ? 'border-green-400 bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300 font-medium'
+                    : 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300'
+                }`}>
+                <span className="font-semibold mr-1.5">{o.key})</span>{o.text}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+
+      {(mcq.answer || mcq.explanation) && (
+        <>
+          <button onClick={() => setRevealed(v => !v)}
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-primary-600 hover:underline">
+            {revealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            {revealed ? 'Hide answer' : 'Show answer'}
+          </button>
+          {revealed && (
+            <div className="mt-2 space-y-1">
+              {mcq.answer && (
+                <p className="text-sm"><span className="font-semibold">Correct answer:</span> {mcq.answer}</p>
+              )}
+              {mcq.explanation && (
+                <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
+                  <span className="font-semibold">Explanation:</span> {mcq.explanation}
+                </p>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
 
 export default function CurrentAffairs() {
   const [items, setItems] = useState([])
@@ -54,16 +166,54 @@ export default function CurrentAffairs() {
           <div className="text-center py-16 text-gray-400">No articles found.</div>
         ) : (
           <div className="grid gap-4">
-            {filtered.map(a => (
-              <div key={a.id} className="card p-5 hover:shadow-md transition-shadow">
-                <div className="flex items-center gap-2 mb-2">
-                  {a.category && <span className="badge bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">{a.category}</span>}
-                  <span className="text-xs text-gray-400">{a.published_date ? new Date(a.published_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : ''}</span>
-                </div>
-                <h3 className="font-semibold text-base mb-1">{a.title}</h3>
-                {a.content && <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">{a.content}</p>}
-              </div>
-            ))}
+            {filtered.map(a => {
+              const parsed = parseArticle(a.content)
+              const isStructured = !!(parsed.mcq || parsed.telugu || parsed.sourceUrl)
+              return (
+                <article key={a.id} className="card p-5 hover:shadow-md transition-shadow">
+                  <div className="flex items-center gap-2 mb-2">
+                    {a.category && <span className="badge bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">{a.category}</span>}
+                    <span className="text-xs text-gray-400">{a.published_date ? new Date(a.published_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : ''}</span>
+                  </div>
+                  <h3 className="font-semibold text-base mb-3">{a.title}</h3>
+
+                  {!isStructured ? (
+                    // Legacy article — render exactly as before
+                    parsed.english && (
+                      <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">{parsed.english}</p>
+                    )
+                  ) : (
+                    // AI-generated article — sectioned. space-y-5 = 20px gaps.
+                    <div className="space-y-5">
+                      {parsed.english && (
+                        <section>
+                          <h4 className="text-xs font-bold uppercase tracking-wide text-gray-400 mb-1.5">English Summary</h4>
+                          <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">{parsed.english}</p>
+                        </section>
+                      )}
+
+                      {parsed.mcq && <McqCard mcq={parsed.mcq} />}
+
+                      {parsed.telugu && (
+                        <section>
+                          <h4 className="text-xs font-bold uppercase tracking-wide text-gray-400 mb-1.5">🇮🇳 తెలుగు సారాంశం</h4>
+                          <p lang="te" className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">{parsed.telugu}</p>
+                        </section>
+                      )}
+
+                      {parsed.sourceUrl && (
+                        <section>
+                          <a href={parsed.sourceUrl} target="_blank" rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 text-sm text-primary-600 hover:underline font-medium">
+                            <ExternalLink className="h-3.5 w-3.5" /> 🔗 Official Source
+                          </a>
+                        </section>
+                      )}
+                    </div>
+                  )}
+                </article>
+              )
+            })}
           </div>
         )}
       </div>
