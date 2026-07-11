@@ -9,6 +9,23 @@ import toast from 'react-hot-toast'
 // ── Constants ──────────────────────────────────────────────────────────────────
 const STATUSES = ['all', 'draft', 'validated', 'approved', 'rejected', 'published', 'archived']
 const CONTENT_TYPES = ['all', 'current_affairs', 'notifications', 'exams', 'previous_papers']
+const PAGE_SIZE = 25
+const SORT_OPTIONS = [
+  { value: 'newest',    label: 'Newest first' },
+  { value: 'oldest',    label: 'Oldest first' },
+  { value: 'conf_high', label: 'Highest confidence' },
+  { value: 'conf_low',  label: 'Lowest confidence' },
+]
+const DATE_OPTIONS = [
+  { value: 'all',   label: 'Any date' },
+  { value: 'today', label: 'Last 24h' },
+  { value: '7d',    label: 'Last 7 days' },
+  { value: '30d',   label: 'Last 30 days' },
+]
+const CHECKLIST_ITEMS = [
+  'Source verified', 'Title verified', 'Facts verified',
+  'Category verified', 'Telugu verified', 'No duplicate',
+]
 
 const STATUS_STYLES = {
   draft:     'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
@@ -39,7 +56,7 @@ function Spinner() {
 }
 
 // ── Automation health strip ────────────────────────────────────────────────────
-function HealthStrip() {
+function HealthStrip({ extra }) {
   const [health, setHealth] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -68,11 +85,15 @@ function HealthStrip() {
     { label: 'Total processed', value: health?.total_processed ?? 0, icon: Activity },
     { label: 'Duplicates caught', value: health?.total_duplicates ?? 0, icon: ShieldCheck },
     { label: 'Dead letter (open)', value: health?.dead_letter_unresolved ?? 0, icon: AlertTriangle, alert: (health?.dead_letter_unresolved ?? 0) > 0 },
+    // P4: computed client-side (no new RPCs / no schema change)
+    { label: 'Avg confidence', value: extra?.avgConfidence != null ? extra.avgConfidence.toFixed(2) : '—', icon: Activity },
+    { label: 'Published this week', value: extra?.publishedWeek ?? '—', icon: CheckCircle2 },
+    { label: 'Rejected today', value: extra?.rejectedToday ?? '—', icon: XCircle },
   ]
 
   return (
     <div className="mb-6 space-y-3">
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {stats.map(({ label, value, icon: Icon, alert }) => (
           <div key={label} className={`card p-4 ${alert ? 'ring-1 ring-red-300 dark:ring-red-800' : ''}`}>
             <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400"><Icon className="h-3.5 w-3.5" />{label}</div>
@@ -119,6 +140,27 @@ export default function AdminDrafts() {
   const [selected, setSelected] = useState(new Set())
   const [counts, setCounts] = useState({})
 
+  // P1: server-side pagination
+  const [page, setPage] = useState(0)               // 0-indexed
+  const [totalRows, setTotalRows] = useState(0)
+
+  // P2: sorting
+  const [sortBy, setSortBy] = useState('newest')    // newest|oldest|conf_high|conf_low
+
+  // P3: additional filters
+  const [categoryFilter, setCategoryFilter] = useState('all')
+  const [sourceFilter, setSourceFilter] = useState('all')
+  const [dateFilter, setDateFilter] = useState('all')     // all|today|7d|30d
+  const [confMin, setConfMin] = useState('')              // '' = unset
+  const [confMax, setConfMax] = useState('')
+  const [facets, setFacets] = useState({ categories: [], sources: [] })
+
+  // P4: client-computed stats (no new RPCs, no schema change)
+  const [extraStats, setExtraStats] = useState({ avgConfidence: null, publishedWeek: null, rejectedToday: null })
+
+  // P6: visual-only review checklist (never persisted)
+  const [checklist, setChecklist] = useState({})
+
   // preview / edit state
   const [preview, setPreview] = useState(null)        // draft object being previewed
   const [editing, setEditing] = useState(false)
@@ -137,21 +179,55 @@ export default function AdminDrafts() {
     return () => clearTimeout(t)
   }, [search])
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    let q = supabase.from('ai_drafts')
-      .select('id, content_type, title, source_name, source_url, confidence_score, status, review_notes, ai_model, language, created_at, updated_at, reviewed_at, published_at, content, json_data')
-      .order('created_at', { ascending: false })
-      .limit(200)
+  // reset to first page whenever a filter/sort/search changes (prevents landing
+  // on an out-of-range page, and prevents acting on stale off-screen selections)
+  useEffect(() => { setPage(0); setSelected(new Set()) },
+    [statusFilter, typeFilter, searchDebounced, categoryFilter, sourceFilter, dateFilter, confMin, confMax, sortBy])
+
+  // apply every active filter to a query builder (shared by list + stats)
+  const applyFilters = useCallback(q => {
     if (statusFilter !== 'all') q = q.eq('status', statusFilter)
     if (typeFilter !== 'all') q = q.eq('content_type', typeFilter)
     if (searchDebounced) q = q.ilike('title', `%${searchDebounced}%`)
-    const { data, error } = await q
+    if (categoryFilter !== 'all') q = q.eq('json_data->>category', categoryFilter)
+    if (sourceFilter !== 'all') q = q.eq('source_name', sourceFilter)
+    if (confMin !== '') q = q.gte('confidence_score', Number(confMin))
+    if (confMax !== '') q = q.lte('confidence_score', Number(confMax))
+    if (dateFilter !== 'all') {
+      const days = dateFilter === 'today' ? 1 : dateFilter === '7d' ? 7 : 30
+      const since = new Date(Date.now() - days * 86400000).toISOString()
+      q = q.gte('created_at', since)
+    }
+    return q
+  }, [statusFilter, typeFilter, searchDebounced, categoryFilter, sourceFilter, dateFilter, confMin, confMax])
+
+  const SORTS = {
+    newest:    { col: 'created_at',       asc: false },
+    oldest:    { col: 'created_at',       asc: true  },
+    conf_high: { col: 'confidence_score', asc: false },
+    conf_low:  { col: 'confidence_score', asc: true  },
+  }
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const s = SORTS[sortBy] || SORTS.newest
+    const from = page * PAGE_SIZE
+    const to = from + PAGE_SIZE - 1
+
+    let q = supabase.from('ai_drafts')
+      .select('id, content_type, title, source_name, source_url, confidence_score, status, review_notes, ai_model, language, created_at, updated_at, reviewed_at, published_at, content, json_data',
+              { count: 'exact' })
+      .order(s.col, { ascending: s.asc, nullsFirst: false })
+      .range(from, to)
+    q = applyFilters(q)
+
+    const { data, error, count } = await q
     if (error) { toast.error(error.message); setLoading(false); return }
     setDrafts(data || [])
+    setTotalRows(count ?? 0)
     setSelected(new Set())
     setLoading(false)
-  }, [statusFilter, typeFilter, searchDebounced])
+  }, [applyFilters, sortBy, page])
   useEffect(() => { load() }, [load])
 
   // status counts for filter tabs (cheap head-count queries, fire-and-forget)
@@ -164,7 +240,53 @@ export default function AdminDrafts() {
   }, [])
   useEffect(() => { loadCounts() }, [loadCounts])
 
-  const refreshAll = () => { load(); loadCounts() }
+  // P4: extra stats. Computed WITHOUT new RPCs/schema. These are global (whole
+  // table), not page-scoped, so the numbers are truthful rather than reflecting
+  // only the 25 loaded rows.
+  const loadExtraStats = useCallback(async () => {
+    const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0)
+    const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString()
+
+    const [confRes, weekRes, rejRes] = await Promise.all([
+      supabase.from('ai_drafts').select('confidence_score').not('confidence_score', 'is', null),
+      supabase.from('ai_drafts').select('id', { count: 'exact', head: true })
+        .eq('status', 'published').gte('published_at', weekAgo),
+      supabase.from('ai_drafts').select('id', { count: 'exact', head: true })
+        .eq('status', 'rejected').gte('reviewed_at', startOfToday.toISOString()),
+    ])
+
+    const vals = (confRes.data || []).map(r => Number(r.confidence_score)).filter(n => !Number.isNaN(n))
+    setExtraStats({
+      avgConfidence: vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null,
+      publishedWeek: weekRes.count ?? 0,
+      rejectedToday: rejRes.count ?? 0,
+    })
+  }, [])
+  useEffect(() => { loadExtraStats() }, [loadExtraStats])
+
+  // P3: facet values for the Category / Source dropdowns (derived from real data)
+  const loadFacets = useCallback(async () => {
+    const { data } = await supabase.from('ai_drafts').select('source_name, json_data').limit(1000)
+    const sources = [...new Set((data || []).map(d => d.source_name).filter(Boolean))].sort()
+    const categories = [...new Set((data || []).map(d => d.json_data?.category).filter(Boolean))].sort()
+    setFacets({ sources, categories })
+  }, [])
+  useEffect(() => { loadFacets() }, [loadFacets])
+
+  // P7: optimistic refresh. Callers pass the ids they acted on and the resulting
+  // status; we patch those rows in place (instant UI) and refresh the cheap
+  // count/stat queries in the background — no full list refetch.
+  // Called with no args (e.g. the Refresh button) it does a real reload.
+  const refreshAll = (ids, newStatus) => {
+    if (ids && newStatus) {
+      const idSet = new Set(ids)
+      setDrafts(prev => prev.map(d => idSet.has(d.id) ? { ...d, status: newStatus } : d))
+      setSelected(new Set())
+      loadCounts(); loadExtraStats()
+      return
+    }
+    load(); loadCounts(); loadExtraStats()
+  }
 
   // ── selection helpers ────────────────────────────────────────────────────────
   const toggle = id => setSelected(prev => {
@@ -188,18 +310,20 @@ export default function AdminDrafts() {
   async function doValidate(draft) {
     const failures = await runRpc('validate_draft', { p_draft_id: draft.id })
     if (failures === null) return
-    if (Array.isArray(failures) && failures.length > 0) {
+    const passed = !(Array.isArray(failures) && failures.length > 0)
+    if (!passed) {
       toast.error(`Validation failed: ${failures.join(', ')}`)
     } else {
       toast.success('Draft validated')
     }
-    setPreview(null); refreshAll()
+    setPreview(null)
+    passed ? refreshAll([draft.id], 'validated') : refreshAll()   // P7 optimistic
   }
 
   async function doApprove(draft) {
     const ok = await runRpc('approve_draft', { p_draft_id: draft.id, p_admin_id: user.id }, 'Draft approved')
     if (ok === null) return
-    setPreview(null); refreshAll()
+    setPreview(null); refreshAll([draft.id], 'approved')   // P7 optimistic
   }
 
   async function doReject(ids, reason) {
@@ -308,10 +432,10 @@ export default function AdminDrafts() {
     <AdminLayout>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">AI Drafts</h1>
-        <button onClick={refreshAll} className="btn-secondary flex items-center gap-2"><RefreshCw className="h-4 w-4" /> Refresh</button>
+        <button onClick={() => refreshAll()} className="btn-secondary flex items-center gap-2"><RefreshCw className="h-4 w-4" /> Refresh</button>
       </div>
 
-      <HealthStrip />
+      <HealthStrip extra={extraStats} />
 
       {/* Filters */}
       <div className="flex flex-col md:flex-row md:items-center gap-3 mb-4">
@@ -323,10 +447,46 @@ export default function AdminDrafts() {
             </button>
           ))}
         </div>
-        <div className="flex gap-2 md:ml-auto">
+        <div className="flex flex-wrap gap-2 md:ml-auto">
           <select className="input !w-auto text-sm" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
             {CONTENT_TYPES.map(t => <option key={t} value={t}>{t === 'all' ? 'All types' : typeLabel(t)}</option>)}
           </select>
+
+          {/* P3: category */}
+          {facets.categories.length > 0 && (
+            <select className="input !w-auto text-sm" value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
+              <option value="all">All categories</option>
+              {facets.categories.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          )}
+
+          {/* P3: source */}
+          {facets.sources.length > 0 && (
+            <select className="input !w-auto text-sm" value={sourceFilter} onChange={e => setSourceFilter(e.target.value)}>
+              <option value="all">All sources</option>
+              {facets.sources.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          )}
+
+          {/* P3: date */}
+          <select className="input !w-auto text-sm" value={dateFilter} onChange={e => setDateFilter(e.target.value)}>
+            {DATE_OPTIONS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+          </select>
+
+          {/* P3: confidence range */}
+          <div className="flex items-center gap-1">
+            <input type="number" step="0.05" min="0" max="1" className="input !w-20 text-sm" placeholder="min"
+              value={confMin} onChange={e => setConfMin(e.target.value)} title="Min confidence" />
+            <span className="text-gray-400 text-xs">–</span>
+            <input type="number" step="0.05" min="0" max="1" className="input !w-20 text-sm" placeholder="max"
+              value={confMax} onChange={e => setConfMax(e.target.value)} title="Max confidence" />
+          </div>
+
+          {/* P2: sorting */}
+          <select className="input !w-auto text-sm" value={sortBy} onChange={e => setSortBy(e.target.value)}>
+            {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+
           <input className="input !w-56 text-sm" placeholder="Search title…" value={search} onChange={e => setSearch(e.target.value)} />
         </div>
       </div>
@@ -398,6 +558,25 @@ export default function AdminDrafts() {
         </div>
       )}
 
+      {/* P1: pagination */}
+      {totalRows > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-4">
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Showing <b>{totalRows === 0 ? 0 : page * PAGE_SIZE + 1}</b>–<b>{Math.min((page + 1) * PAGE_SIZE, totalRows)}</b> of <b>{totalRows}</b>
+          </p>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0 || loading}
+              className="btn-secondary text-sm disabled:opacity-40">Previous</button>
+            <span className="text-sm font-medium px-2">
+              Page {page + 1} of {Math.max(1, Math.ceil(totalRows / PAGE_SIZE))}
+            </span>
+            <button onClick={() => setPage(p => p + 1)}
+              disabled={loading || (page + 1) * PAGE_SIZE >= totalRows}
+              className="btn-secondary text-sm disabled:opacity-40">Next</button>
+          </div>
+        </div>
+      )}
+
       {/* Preview / edit modal */}
       <Modal open={!!preview} onClose={() => setPreview(null)} title={editing ? 'Edit Draft' : 'Draft Preview'} maxWidth="max-w-3xl">
         {preview && (
@@ -406,6 +585,9 @@ export default function AdminDrafts() {
             <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
               <StatusBadge status={preview.status} />
               <span className="capitalize">{typeLabel(preview.content_type)}</span>
+              {preview.json_data?.category && (
+                <span className="badge bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">{preview.json_data.category}</span>
+              )}
               {preview.language && <span className="uppercase">{preview.language}</span>}
               {preview.ai_model && <span>{preview.ai_model}</span>}
               {preview.confidence_score != null && <span>confidence {Math.round(preview.confidence_score * 100)}%</span>}
@@ -419,6 +601,26 @@ export default function AdminDrafts() {
             {preview.review_notes && (
               <div className="text-xs bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 rounded-lg px-3 py-2">
                 Review notes: {preview.review_notes}
+              </div>
+            )}
+
+            {/* P6: reviewer checklist — visual aid only, never stored, never blocking */}
+            {!editing && (
+              <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                <p className="text-xs font-semibold mb-2 text-gray-600 dark:text-gray-300">Review checklist (optional)</p>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                  {CHECKLIST_ITEMS.map(item => {
+                    const key = `${preview.id}:${item}`
+                    return (
+                      <label key={item} className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300 cursor-pointer">
+                        <input type="checkbox" className="rounded"
+                          checked={!!checklist[key]}
+                          onChange={e => setChecklist(prev => ({ ...prev, [key]: e.target.checked }))} />
+                        {item}
+                      </label>
+                    )
+                  })}
+                </div>
               </div>
             )}
 
