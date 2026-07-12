@@ -495,7 +495,7 @@ Make questions relevant to Indian government exam syllabus. Do not use markdown.
           <h2 className="text-2xl font-bold mb-2">Upgrade to Pro</h2>
           <p className="text-gray-500 dark:text-gray-400 mb-6">Unlock unlimited mock tests + Genius AI</p>
           <div className="bg-white dark:bg-gray-900 rounded-2xl p-6 max-w-sm mx-auto shadow-lg mb-6">
-            <p className="text-4xl font-extrabold text-primary-600 mb-1">₹99 <span className="text-lg font-normal text-gray-400">/month</span></p>
+            <p className="text-4xl font-extrabold text-primary-600 mb-1">₹199 <span className="text-lg font-normal text-gray-400">/month</span></p>
             <p className="text-sm text-gray-400 mb-4">Cancel anytime</p>
             <ul className="text-left space-y-2 text-sm mb-5">
               {['Unlimited mock tests', 'Unlimited Genius AI messages', 'Personalized study plans', 'Performance analytics', 'Previous year papers PDF', 'Priority support'].map(f => (
@@ -504,10 +504,14 @@ Make questions relevant to Indian government exam syllabus. Do not use markdown.
                 </li>
               ))}
             </ul>
-            <a href="https://rzp.io/rzp/JuthfaVR" target="_blank" rel="noopener noreferrer"
+            {/* Must go through /subscribe. A direct Razorpay payment link
+                (previously https://rzp.io/rzp/JuthfaVR) bypasses /api/create-order
+                and /api/verify-payment entirely, so the payment is captured but
+                Pro is never activated and no payments row is written. */}
+            <Link to="/subscribe"
               className="btn-primary w-full justify-center py-3 text-base">
-              Get Pro -- ₹99/month
-            </a>
+              Get Pro -- ₹199/month
+            </Link>
           </div>
           <p className="text-xs text-gray-400">Secure payment via Razorpay. Cancel anytime.</p>
         </div>
