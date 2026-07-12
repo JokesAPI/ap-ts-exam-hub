@@ -1,22 +1,17 @@
 import { useState, useEffect, useRef } from 'react'
+import { useNavigate, Link } from 'react-router-dom'
+import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../context/AuthContext'
+import { loadTestCatalog, resolveAccess } from '../../lib/officialTests'
 import { Helmet } from 'react-helmet-async'
 import Layout from '../../components/Layout'
-import { FileText, Clock, Users, Lock, CheckCircle, Star, ArrowRight, RotateCcw, Trophy, XCircle, ChevronRight, Loader } from 'lucide-react'
+import { FileText, Clock, Users, Lock, CheckCircle, Star, ArrowRight, RotateCcw, Trophy, XCircle, ChevronRight, Loader, Sparkles } from 'lucide-react'
 import { callGroq } from '../../lib/groq'
 
-const FREE_MOCK_LIMIT = 2
-const MOCK_KEY = 'mock_tests_used'
-
-const mockTests = [
-  { id: 1, title: 'APPSC Group-2 General Studies', subject: 'General Studies', exam: 'APPSC Group-2', questions: 10, time: 10, difficulty: 'Medium', attempts: 1240, free: true },
-  { id: 2, title: 'TSPSC Group-1 Prelims', subject: 'General Studies', exam: 'TSPSC Group-1', questions: 10, time: 10, difficulty: 'Hard', attempts: 980, free: true },
-  { id: 3, title: 'AP Police SI General Ability', subject: 'General Ability', exam: 'AP Police SI', questions: 10, time: 10, difficulty: 'Medium', attempts: 756, free: false },
-  { id: 4, title: 'APPSC Panchayat Secretary', subject: 'AP Economy & Polity', exam: 'APPSC Panchayat Secretary', questions: 10, time: 10, difficulty: 'Easy', attempts: 1100, free: false },
-  { id: 5, title: 'TSPSC Group-2 Current Affairs', subject: 'Current Affairs', exam: 'TSPSC Group-2', questions: 10, time: 10, difficulty: 'Medium', attempts: 890, free: false },
-  { id: 6, title: 'AP DSC Child Development', subject: 'Child Development & Pedagogy', exam: 'AP DSC', questions: 10, time: 10, difficulty: 'Medium', attempts: 670, free: false },
-  { id: 7, title: 'Indian Constitution MCQs', subject: 'Indian Polity & Constitution', exam: 'APPSC/TSPSC', questions: 10, time: 10, difficulty: 'Hard', attempts: 540, free: false },
-  { id: 8, title: 'AP Economy & Development', subject: 'AP Economy', exam: 'APPSC Group-2', questions: 10, time: 10, difficulty: 'Easy', attempts: 430, free: false },
-]
+// The official catalog now lives in Supabase (mock_tests). The old hardcoded
+// mockTests[] array is gone: its ids matched nothing in the DB, it carried
+// fabricated attempt counts (1240, 980, ...) while real attempts were 0, and it
+// duplicated the catalog. AI Practice reuses the same DB catalog as topic seeds.
 
 // ── Parse AI text into structured questions ──────────────────────────────────
 function parseQuestions(text) {
@@ -61,10 +56,23 @@ export default function MockTests() {
   const [answers, setAnswers] = useState({})      // { 0: 'A', 1: 'C', ... }
   const [revealed, setRevealed] = useState({})    // which questions are revealed
   const [timeLeft, setTimeLeft] = useState(0)
-  const [showPaywall, setShowPaywall] = useState(false)
   const [error, setError] = useState('')
   const timerRef = useRef(null)
-  const usedCount = parseInt(localStorage.getItem(MOCK_KEY) || '0')
+
+  // PR-2: official catalog from Supabase + two clearly-separated modes
+  const { user, isPro } = useAuth()
+  const navigate = useNavigate()
+  const [mode, setMode] = useState('official')     // 'official' | 'practice'
+  const [catalog, setCatalog] = useState(null)     // null = loading
+  const [catalogError, setCatalogError] = useState('')
+
+  useEffect(() => {
+    let alive = true
+    loadTestCatalog(supabase)
+      .then(rows => { if (alive) setCatalog(rows) })
+      .catch(err => { if (alive) { setCatalogError(err.message); setCatalog([]) } })
+    return () => { alive = false }
+  }, [])
 
   // ── Timer ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -85,11 +93,17 @@ export default function MockTests() {
     return `${m}:${sec.toString().padStart(2, '0')}`
   }
 
-  // ── Start test ─────────────────────────────────────────────────────────────
-  async function startTest(test) {
-    if (!test.free && usedCount >= FREE_MOCK_LIMIT) { setShowPaywall(true); return }
-    if (!test.free) localStorage.setItem(MOCK_KEY, String(usedCount + 1))
+  // ── OFFICIAL test → hand off to the engine (Supabase-backed, RLS-gated) ────
+  function startOfficialTest(test) {
+    const access = resolveAccess(test.access_tier, { user, isPro })
+    if (access === 'login')   { navigate('/login'); return }
+    if (access === 'upgrade') { navigate('/subscribe'); return }
+    navigate('/mock-test/start', { state: { testId: test.test_id, title: test.title } })
+  }
 
+  // ── AI PRACTICE → generated on the fly. Never scored, never ranked, never
+  //    written to mock_results, and never inserted into the official bank.
+  async function startTest(test) {
     setSelectedTest(test)
     setScreen('loading')
     setError('')
@@ -97,7 +111,7 @@ export default function MockTests() {
     setRevealed({})
     setCurrentQ(0)
 
-    const prompt = `Generate exactly 10 MCQ questions for ${test.exam} exam on the topic "${test.subject}". 
+    const prompt = `Generate exactly 10 MCQ questions for the ${test.title} exam on the topic "${test.subject || test.title}". 
 Format STRICTLY as:
 Q1. [Question text]
 A) [option]
@@ -111,12 +125,12 @@ Q2. ...and so on up to Q10.
 Make questions relevant to Indian government exam syllabus. Do not use markdown.`
 
     try {
-      const systemPrompt = `You are an expert question setter for Indian government competitive exams (APPSC, TSPSC, SSC, Police, DSC, TET). Generate high-quality MCQ questions. Always follow the exact format given. Never use ** or ## or backticks.`
+      const systemPrompt = `You are an expert question setter for Indian government competitive exams (APPSC, TGPSC, SSC, Police, DSC, TET). Generate high-quality MCQ questions. Always follow the exact format given. Never use ** or ## or backticks.`
       const reply = await callGroq(systemPrompt, [{ role: 'user', content: prompt }])
       const parsed = parseQuestions(reply)
       if (parsed.length < 5) throw new Error('Could not parse questions. Please try again.')
       setQuestions(parsed)
-      setTimeLeft(test.time * 60)
+      setTimeLeft(10 * 60)   // AI Practice: fixed 10-minute practice window
       setScreen('quiz')
     } catch (err) {
       setError(err.message)
@@ -397,53 +411,80 @@ Make questions relevant to Indian government exam syllabus. Do not use markdown.
           </div>
         )}
 
-        <div className="card p-4 mb-6 flex items-center justify-between flex-wrap gap-3">
-          <div className="flex items-center gap-2">
-            <Star className="h-5 w-5 text-yellow-500" />
-            <span className="font-semibold">Free Plan: {Math.max(0, FREE_MOCK_LIMIT - usedCount)} test{Math.max(0, FREE_MOCK_LIMIT - usedCount) !== 1 ? 's' : ''} remaining</span>
-          </div>
-          <a href="#upgrade" className="btn-primary text-sm py-1.5">
-            Upgrade ₹99/month -- Unlimited Tests
-          </a>
+        {/* ── Mode switch: Official (Supabase, scored) vs AI Practice (unscored) ── */}
+        <div className="flex gap-2 mb-6">
+          <button onClick={() => setMode('official')}
+            className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-colors ${mode === 'official' ? 'bg-primary-600 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}>
+            Official Mock Tests
+          </button>
+          <button onClick={() => setMode('practice')}
+            className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-colors ${mode === 'practice' ? 'bg-primary-600 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}>
+            AI Practice
+          </button>
         </div>
 
+        {mode === 'official' ? (
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">
+            Human-reviewed questions from our official question bank. Scored, saved to your history and counted in analytics.
+          </p>
+        ) : (
+          <div className="card p-4 mb-5 border-l-4 border-yellow-400 bg-yellow-50/60 dark:bg-yellow-900/10">
+            <p className="text-sm font-semibold mb-1">AI Practice — not an official test</p>
+            <p className="text-xs text-gray-600 dark:text-gray-400">
+              Questions are generated by AI for unlimited practice. They are <b>not reviewed</b>, produce <b>no rank</b>,
+              <b> no official score</b>, and are <b>not saved</b> to your attempt history. For scored practice, use Official Mock Tests.
+            </p>
+          </div>
+        )}
+
+        {catalogError && (
+          <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 text-sm">
+            ⚠️ {catalogError}
+          </div>
+        )}
+
         <div className="grid sm:grid-cols-2 gap-4 mb-10">
-          {mockTests.map(test => {
-            const locked = !test.free && usedCount >= FREE_MOCK_LIMIT
+          {catalog === null ? (
+            [0, 1, 2, 3].map(i => <div key={i} className="card p-5 h-40 animate-pulse bg-gray-100 dark:bg-gray-800" />)
+          ) : catalog.length === 0 ? (
+            <p className="text-sm text-gray-400 col-span-2">No tests are available yet.</p>
+          ) : catalog.map(test => {
+            const access = resolveAccess(test.access_tier, { user, isPro })
+            const locked = mode === 'official' && access !== 'start'
             return (
-              <div key={test.id} className="card p-5 hover:shadow-md transition-shadow">
+              <div key={test.test_id} className="card p-5 hover:shadow-md transition-shadow">
                 <div className="flex items-start justify-between mb-3">
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      {test.free ? (
+                      {test.access_tier === 'public' && (
                         <span className="badge bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">FREE</span>
-                      ) : (
+                      )}
+                      {test.access_tier === 'free' && (
+                        <span className="badge bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">LOGIN</span>
+                      )}
+                      {test.access_tier === 'premium' && (
                         <span className="badge bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300">PRO</span>
                       )}
-                      <span className={`badge ${test.difficulty === 'Easy' ? 'bg-blue-100 text-blue-700' : test.difficulty === 'Medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
-                        {test.difficulty}
-                      </span>
                     </div>
-                    <h3 className="font-semibold">{test.title}</h3>
-                    <p className="text-xs text-gray-400 mt-0.5">{test.subject}</p>
+                    <h3 className="font-semibold truncate">{test.title}</h3>
+                    {test.subject && <p className="text-xs text-gray-400 mt-0.5">{test.subject}</p>}
                   </div>
                   {locked && <Lock className="h-4 w-4 text-gray-400 flex-shrink-0 ml-2" />}
                 </div>
 
-                <div className="flex gap-4 text-sm text-gray-500 dark:text-gray-400 mb-4">
-                  <span className="flex items-center gap-1"><FileText className="h-3.5 w-3.5" /> {test.questions} Qs</span>
-                  <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> {test.time} min</span>
-                  <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" /> {test.attempts.toLocaleString()}</span>
-                </div>
-
-                <button onClick={() => startTest(test)}
-                  className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 ${locked ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 cursor-not-allowed' : 'bg-primary-600 hover:bg-primary-700 text-white'}`}>
-                  {locked ? (
-                    <><Lock className="h-4 w-4" /> Unlock with Pro</>
-                  ) : (
-                    <><ArrowRight className="h-4 w-4" /> {test.free ? 'Start Free Test' : 'Start Test'}</>
-                  )}
-                </button>
+                {mode === 'official' ? (
+                  <button onClick={() => startOfficialTest(test)}
+                    className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 bg-primary-600 hover:bg-primary-700 text-white">
+                    {access === 'start'   && <><ArrowRight className="h-4 w-4" /> Start Test</>}
+                    {access === 'login'   && <><Lock className="h-4 w-4" /> Login Required</>}
+                    {access === 'upgrade' && <><Lock className="h-4 w-4" /> Upgrade Required</>}
+                  </button>
+                ) : (
+                  <button onClick={() => startTest(test)}
+                    className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 bg-yellow-500 hover:bg-yellow-600 text-white">
+                    <Sparkles className="h-4 w-4" /> Generate AI Practice
+                  </button>
+                )}
               </div>
             )
           })}

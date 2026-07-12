@@ -4,7 +4,7 @@ import { useNavigate, useLocation, Link } from 'react-router-dom'
 import Layout from '../../components/Layout'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
-import { getQuestionsForTest } from '../../lib/questions'
+import { loadTest, loadOfficialQuestions, resolveAccess } from '../../lib/officialTests'
 import {
   Clock, CheckCircle, XCircle, AlertCircle, Trophy,
   RotateCcw, ChevronLeft, ChevronRight, MinusCircle,
@@ -12,8 +12,9 @@ import {
 } from 'lucide-react'
 
 const TEST_TIME_PER_Q  = 60
-const FREE_TEST_LIMIT  = 2
-const STORAGE_KEY      = 'mock_tests_used_v2'
+// NOTE: the old localStorage quota (FREE_TEST_LIMIT / 'mock_tests_used_v2') is gone.
+// Access is enforced server-side by RLS on mock_questions — clearing browser
+// storage no longer unlocks anything.
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function safeGet(key, fallback) {
@@ -40,25 +41,17 @@ export default function MockTestEngine() {
   const [phase,          setPhase]          = useState('loading')
   const [result,         setResult]         = useState(null)
   const [activeSection,  setActiveSection]  = useState('analytics')
-  const [paywallMsg,     setPaywallMsg]     = useState('')
+  const [gate,           setGate]           = useState(null)   // 'login' | 'upgrade'
+  const [errorMsg,       setErrorMsg]       = useState('')
+  const [testMeta,       setTestMeta]       = useState(null)
   const [saving,         setSaving]         = useState(false)
 
   const timerRef   = useRef(null)
   const startTime  = useRef(Date.now())
   const submitted  = useRef(false)
 
-  // ── Fix #3: Check paywall before loading ─────────────────────────────────
-  useEffect(() => {
-    if (!isPro) {
-      const used = safeGet(STORAGE_KEY, 0)
-      if (used >= FREE_TEST_LIMIT) {
-        setPhase('paywall')
-        setPaywallMsg(`You have used your ${FREE_TEST_LIMIT} free mock tests. Upgrade to Pro for unlimited tests.`)
-        return
-      }
-    }
-    loadQuestions()
-  }, [])
+  // ── PR-2: official tests load from Supabase only, gated by access_tier ────
+  useEffect(() => { loadQuestions() }, [testId, user, isPro])
 
   useEffect(() => {
     if (phase !== 'test') return
@@ -71,11 +64,31 @@ export default function MockTestEngine() {
     return () => clearInterval(timerRef.current)
   }, [phase])
 
-  function loadQuestions() {
+  async function loadQuestions() {
+    setPhase('loading')
+    setErrorMsg('')
     try {
-      const localQs  = getQuestionsForTest(testId)
-      const fallback = getQuestionsForTest('appsc-gs-1')
-      const pool     = (localQs?.length > 0 ? localQs : fallback) || []
+      // 1. Resolve the test and its tier.
+      const test = await loadTest(supabase, testId)
+      if (!test) {
+        setErrorMsg('This test no longer exists.')
+        setPhase('error')
+        return
+      }
+      setTestMeta(test)
+
+      // 2. Gate on tier BEFORE fetching questions, so we can show the right
+      //    screen instead of an ambiguous empty result.
+      const access = resolveAccess(test.access_tier, { user, isPro })
+      if (access !== 'start') {
+        setGate(access)                    // 'login' | 'upgrade'
+        setPhase('gated')
+        return
+      }
+
+      // 3. Questions come ONLY from Supabase. No hardcoded fallback: if this
+      //    throws we show an explicit error rather than serving stale content.
+      const pool = await loadOfficialQuestions(supabase, testId)
       const shuffled = [...pool].sort(() => Math.random() - 0.5)
       setQuestions(shuffled)
       setTimeLeft(shuffled.length * TEST_TIME_PER_Q)
@@ -83,7 +96,7 @@ export default function MockTestEngine() {
       startTime.current = Date.now()
       submitted.current = false
     } catch (err) {
-      console.error('loadQuestions error:', err)
+      setErrorMsg(err.message || 'Could not load this test.')
       setPhase('error')
     }
   }
@@ -173,11 +186,9 @@ export default function MockTestEngine() {
       }
     }
 
-    // Increment free test counter only for non-Pro users
-    if (!isPro) {
-      const used = safeGet(STORAGE_KEY, 0)
-      safeSet(STORAGE_KEY, used + 1)
-    }
+    // (Removed) the localStorage free-test counter. Access is now enforced by
+    // RLS on mock_questions, so a client-side counter buys us nothing and was
+    // trivially bypassable by clearing browser storage.
   }
 
   function formatTime(secs) {
@@ -197,26 +208,39 @@ export default function MockTestEngine() {
   const answered = Object.keys(answers).length
 
   // ── PAYWALL SCREEN ────────────────────────────────────────────────────────
-  if (phase === 'paywall') return (
+  // ── ACCESS GATE (tier-based, enforced server-side by RLS) ─────────────────
+  if (phase === 'gated') return (
     <Layout>
       <div className="min-h-[70vh] flex items-center justify-center px-4">
         <div className="card p-8 max-w-md w-full text-center">
           <Lock className="h-14 w-14 mx-auto mb-4 text-purple-500" />
-          <h2 className="text-xl font-bold mb-2">Free Limit Reached</h2>
-          <p className="text-gray-500 text-sm mb-6">{paywallMsg}</p>
-          <div className="bg-primary-50 dark:bg-primary-900/20 rounded-xl p-4 mb-6">
-            <p className="text-3xl font-extrabold text-primary-600 mb-1">Rs.199<span className="text-base font-normal text-gray-400">/month</span></p>
-            <ul className="text-sm text-gray-600 dark:text-gray-300 space-y-1 text-left mt-3">
-              {['Unlimited mock tests', 'Unlimited Genius AI', 'All 11 AI tools', 'Performance analytics'].map(f => (
-                <li key={f} className="flex items-center gap-2">
-                  <CheckCircle className="h-4 w-4 text-green-500 flex-shrink-0" /> {f}
-                </li>
-              ))}
-            </ul>
-          </div>
-          <Link to="/subscribe" className="btn-primary w-full justify-center mb-3">
-            Upgrade to Pro
-          </Link>
+          {gate === 'login' ? (
+            <>
+              <h2 className="text-xl font-bold mb-2">Login Required</h2>
+              <p className="text-gray-500 text-sm mb-6">
+                {testMeta?.title ? `"${testMeta.title}" is a free test for registered students.` : 'This test is free for registered students.'} Sign in to start.
+              </p>
+              <Link to="/login" className="btn-primary w-full justify-center mb-3">Login / Sign Up — Free</Link>
+            </>
+          ) : (
+            <>
+              <h2 className="text-xl font-bold mb-2">Upgrade Required</h2>
+              <p className="text-gray-500 text-sm mb-6">
+                {testMeta?.title ? `"${testMeta.title}" is a Premium test.` : 'This is a Premium test.'} Upgrade to unlock it.
+              </p>
+              <div className="bg-primary-50 dark:bg-primary-900/20 rounded-xl p-4 mb-6">
+                <p className="text-3xl font-extrabold text-primary-600 mb-1">Rs.199<span className="text-base font-normal text-gray-400">/month</span></p>
+                <ul className="text-sm text-gray-600 dark:text-gray-300 space-y-1 text-left mt-3">
+                  {['All premium mock tests', 'Unlimited Genius AI', 'Performance analytics', 'Previous papers'].map(f => (
+                    <li key={f} className="flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4 text-green-500 flex-shrink-0" /> {f}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <Link to="/subscribe" className="btn-primary w-full justify-center mb-3">Upgrade to Pro</Link>
+            </>
+          )}
           <button onClick={() => navigate('/mock-tests')} className="btn-secondary w-full justify-center">
             Back to Tests
           </button>
@@ -231,7 +255,8 @@ export default function MockTestEngine() {
       <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4 px-4 text-center">
         <AlertCircle className="h-12 w-12 text-red-500" />
         <h2 className="text-xl font-bold">Failed to load questions</h2>
-        <p className="text-gray-500 text-sm">Please check your internet connection and try again.</p>
+        <p className="text-gray-500 text-sm max-w-md">{errorMsg || 'Please check your internet connection and try again.'}</p>
+        <p className="text-gray-400 text-xs">Official questions are served only from our reviewed question bank — we never substitute unverified content.</p>
         <button onClick={loadQuestions} className="btn-primary">Try Again</button>
       </div>
     </Layout>
