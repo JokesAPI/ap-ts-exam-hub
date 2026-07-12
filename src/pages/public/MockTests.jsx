@@ -513,24 +513,12 @@ Make questions relevant to Indian government exam syllabus. Do not use markdown.
         </div>
       </div>
 
-      {/* Paywall Modal */}
-      {showPaywall && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowPaywall(false)} />
-          <div className="relative bg-white dark:bg-gray-900 rounded-2xl p-8 max-w-md w-full text-center shadow-2xl">
-            <Lock className="h-12 w-12 mx-auto mb-3 text-purple-500" />
-            <h3 className="text-xl font-bold mb-2">Free Limit Reached!</h3>
-            <p className="text-gray-500 dark:text-gray-400 mb-5">You have used your 2 free mock tests. Upgrade to continue practicing.</p>
-            <a href="https://rzp.io/rzp/JuthfaVR" target="_blank" rel="noopener noreferrer"
-              className="btn-primary w-full justify-center py-3 mb-3">
-              Upgrade for ₹99/month
-            </a>
-            <button onClick={() => setShowPaywall(false)} className="btn-secondary w-full justify-center">
-              Maybe Later
-            </button>
-          </div>
-        </div>
-      )}
+      {/* (Removed in PR-2) The legacy "Free Limit Reached" modal lived here. It
+          was driven by the localStorage quota (showPaywall / mock_tests_used /
+          FREE_MOCK_LIMIT), which was bypassable by clearing browser storage.
+          Access is now decided per-test by access_tier and enforced by RLS:
+          public -> Start, anon+free -> Login Required, free user+premium ->
+          Upgrade Required, premium -> Start. */}
     </Layout>
   )
 }
