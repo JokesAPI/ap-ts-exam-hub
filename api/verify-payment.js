@@ -1,15 +1,24 @@
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 
+// ── Server-side plan catalogue ────────────────────────────────────────────────
+// The browser sends a plan *id* only. Duration and amount are resolved HERE, so a
+// tampered client cannot buy a year for a month's price or invent a plan.
+// Prices mirror src/pages/public/Subscribe.jsx — pricing is NOT changed here.
+const PLANS = {
+  monthly: { months: 1,  amount: 199 },
+  yearly:  { months: 12, amount: 999 },
+};
+
+const isNonEmptyString = v => typeof v === 'string' && v.trim().length > 0;
+const UNIQUE_VIOLATION = '23505'; // payments has UNIQUE(razorpay_payment_id)
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-
+  if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
@@ -21,14 +30,21 @@ export default async function handler(req, res) {
       razorpay_signature,
       user_id,
       plan,
-    } = req.body;
+    } = req.body || {};
 
-    // ── 1. Validate required fields ──────────────────────────────────────────
-    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !user_id) {
+    // ── 1. Validate inputs ───────────────────────────────────────────────────
+    if (![razorpay_order_id, razorpay_payment_id, razorpay_signature, user_id, plan].every(isNonEmptyString)) {
       return res.status(400).json({ success: false, error: 'Missing required fields' });
     }
 
-    // ── 2. Verify Razorpay signature (SERVER SIDE ONLY) ──────────────────────
+    // Reject unknown plans; never trust an amount from the browser.
+    const planConfig = PLANS[plan];
+    if (!planConfig) {
+      console.error('Rejected unknown plan:', plan);
+      return res.status(400).json({ success: false, error: 'Invalid plan' });
+    }
+
+    // ── 2. Razorpay HMAC signature (server-side, unchanged) ──────────────────
     const razorpaySecret = process.env.RAZORPAY_KEY_SECRET;
     if (!razorpaySecret) {
       console.error('RAZORPAY_KEY_SECRET not set');
@@ -41,41 +57,30 @@ export default async function handler(req, res) {
       .update(body)
       .digest('hex');
 
-    // ── 3. Compare signatures ──────────────────────────────────────────────────
     if (expectedSignature !== razorpay_signature) {
       console.error('Signature mismatch - possible fraud attempt');
       return res.status(400).json({ success: false, error: 'Payment verification failed' });
     }
 
-    // ── 4. Signature valid -- update database with SERVICE ROLE key ────────────
+    // ── 3. Supabase service-role client ─────────────────────────────────────
+    // Required: a trigger (protect_premium_profile_fields) permits is_pro changes
+    // only for service_role.
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      console.error('SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set');
+      return res.status(500).json({ success: false, error: 'Server configuration error' });
+    }
     const supabase = createClient(
       process.env.SUPABASE_URL,
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
     const now = new Date();
-    const expiresAt = new Date(now);
-    if (plan === 'yearly') {
-      expiresAt.setFullYear(expiresAt.getFullYear() + 1);
-    } else {
-      expiresAt.setMonth(expiresAt.getMonth() + 1);
-    }
 
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .update({
-        is_pro: true,
-        pro_expires_at: expiresAt.toISOString(),
-        updated_at: now.toISOString(),
-      })
-      .eq('id', user_id);
-
-    if (profileError) {
-      console.error('Profile update error:', profileError);
-      return res.status(500).json({ success: false, error: 'Failed to activate Pro' });
-    }
-
-    const { error: paymentError } = await supabase
+    // ── 4. Record the payment FIRST (idempotency gate) ───────────────────────
+    // UNIQUE(razorpay_payment_id) means a replayed callback cannot create a second
+    // record, and therefore cannot extend Pro twice. Recording before activation
+    // also guarantees we never grant Pro without an audit trail.
+    const { error: insertError } = await supabase
       .from('payments')
       .insert({
         user_id,
@@ -83,16 +88,102 @@ export default async function handler(req, res) {
         razorpay_payment_id,
         razorpay_signature,
         plan,
-        amount: plan === 'yearly' ? 999 : 199,
+        amount: planConfig.amount,   // server-side amount
         status: 'success',
         created_at: now.toISOString(),
       });
 
-    if (paymentError) {
-      console.error('Payment record error:', paymentError); // non-fatal
+    let isReplay = false;
+    if (insertError) {
+      if (insertError.code === UNIQUE_VIOLATION) {
+        isReplay = true;
+
+        // A payment id must never activate a different account.
+        const { data: existing, error: lookupError } = await supabase
+          .from('payments')
+          .select('user_id')
+          .eq('razorpay_payment_id', razorpay_payment_id)
+          .maybeSingle();
+
+        if (lookupError) {
+          console.error('Duplicate lookup failed:', lookupError);
+          return res.status(500).json({ success: false, error: 'Payment verification failed' });
+        }
+        if (!existing || existing.user_id !== user_id) {
+          console.error('Payment id replayed for a different user');
+          return res.status(409).json({ success: false, error: 'Payment already processed' });
+        }
+      } else {
+        // Do NOT hide payment-insert failures (the old code only logged them).
+        console.error('Payment record error:', insertError);
+        return res.status(500).json({ success: false, error: 'Could not record payment' });
+      }
     }
 
-    return res.status(200).json({ success: true, expires_at: expiresAt.toISOString() });
+    // ── 5. Replay: never extend an already-active subscription ───────────────
+    if (isReplay) {
+      const { data: prof, error: profReadError } = await supabase
+        .from('profiles')
+        .select('is_pro, pro_expires_at')
+        .eq('id', user_id)
+        .maybeSingle();
+
+      if (profReadError) {
+        console.error('Profile read error:', profReadError);
+        return res.status(500).json({ success: false, error: 'Failed to activate Pro' });
+      }
+
+      if (prof?.is_pro === true && prof.pro_expires_at && new Date(prof.pro_expires_at) > now) {
+        return res.status(200).json({
+          success: true,
+          already_processed: true,
+          expires_at: prof.pro_expires_at,   // existing expiry, NOT extended
+        });
+      }
+      // Else: payment recorded but activation never completed. Activate now.
+    }
+
+    // ── 6. Activate Pro and PROVE what was written ───────────────────────────
+    // profiles has only is_pro and pro_expires_at. The previous code also wrote
+    // `updated_at`, which does not exist — Postgres rejected the whole UPDATE
+    // (42703), so is_pro was never set. That was the outage.
+    const expiresAt = new Date(now);
+    expiresAt.setMonth(expiresAt.getMonth() + planConfig.months);
+
+    const { data: updatedRows, error: profileError } = await supabase
+      .from('profiles')
+      .update({
+        is_pro: true,
+        pro_expires_at: expiresAt.toISOString(),
+      })
+      .eq('id', user_id)
+      .select('id, is_pro, pro_expires_at');
+
+    if (profileError) {
+      console.error('Profile update error:', profileError);
+      return res.status(500).json({ success: false, error: 'Failed to activate Pro' });
+    }
+
+    // A zero-row update returns NO error from Supabase. Never call that success.
+    if (!Array.isArray(updatedRows) || updatedRows.length === 0) {
+      console.error('No profile matched user_id:', user_id);
+      return res.status(500).json({ success: false, error: 'Failed to activate Pro' });
+    }
+    if (updatedRows.length > 1) {
+      console.error('Unexpected: multiple profiles matched user_id:', user_id);
+      return res.status(500).json({ success: false, error: 'Failed to activate Pro' });
+    }
+
+    const activated = updatedRows[0];
+    if (activated.is_pro !== true || !activated.pro_expires_at) {
+      console.error('Activation did not persist:', activated);
+      return res.status(500).json({ success: false, error: 'Failed to activate Pro' });
+    }
+
+    return res.status(200).json({
+      success: true,
+      expires_at: activated.pro_expires_at,   // echo what the DB actually stored
+    });
 
   } catch (err) {
     console.error('verify-payment error:', err);

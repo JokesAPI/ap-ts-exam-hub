@@ -116,16 +116,26 @@ export default function Subscribe() {
               }),
             })
 
-            const result = await verifyRes.json()
+            // Never assume success: check the HTTP status, then parse safely,
+            // then require an explicit success flag from the server.
+            let result = null
+            try {
+              result = await verifyRes.json()
+            } catch {
+              result = null   // non-JSON body (e.g. an HTML error page)
+            }
 
-            if (result.success) {
-              // Refresh profile so isPro updates in UI
+            if (verifyRes.ok && result?.success === true) {
+              // Refresh profile ONLY after the server confirmed activation.
               await fetchProfile(user.id)
               toast.success('Payment successful! Pro activated.')
               window.location.href = '/genius-ai'
             } else {
-              toast.error('Payment verification failed. Contact support.')
-              console.error('Verification failed:', result.error)
+              const reason = result?.error || `Verification failed (HTTP ${verifyRes.status})`
+              toast.error(
+                `Payment received but activation failed. Please contact support with payment ID: ${response.razorpay_payment_id}`
+              )
+              console.error('Verification failed:', reason)
             }
           } catch (err) {
             toast.error('Verification error. Please contact support with payment ID: ' + response.razorpay_payment_id)
