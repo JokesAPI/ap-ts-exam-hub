@@ -229,7 +229,7 @@ export default function MockTestEngine() {
                 {testMeta?.title ? `"${testMeta.title}" is a Premium test.` : 'This is a Premium test.'} Upgrade to unlock it.
               </p>
               <div className="bg-primary-50 dark:bg-primary-900/20 rounded-xl p-4 mb-6">
-                <p className="text-3xl font-extrabold text-primary-600 mb-1">Rs.199<span className="text-base font-normal text-gray-400">/month</span></p>
+                <p className="text-3xl font-extrabold text-primary-600 mb-1">Rs.9<span className="text-base font-normal text-gray-400">/month</span></p>
                 <ul className="text-sm text-gray-600 dark:text-gray-300 space-y-1 text-left mt-3">
                   {['All premium mock tests', 'Unlimited Genius AI', 'Performance analytics', 'Previous papers'].map(f => (
                     <li key={f} className="flex items-center gap-2">

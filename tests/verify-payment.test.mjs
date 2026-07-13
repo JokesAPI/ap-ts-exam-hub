@@ -16,8 +16,20 @@ const SECRET = 'test_razorpay_secret';
 const USER   = '11111111-1111-1111-1111-111111111111';
 
 process.env.RAZORPAY_KEY_SECRET      = SECRET;
+process.env.RAZORPAY_KEY_ID          = 'rzp_test_key';
 process.env.SUPABASE_URL             = 'https://stub.supabase.co';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'stub-service-role-key';
+
+// ── Razorpay Fetch-Payment API stub ──────────────────────────────────────────
+// scenario.rzpPayment defines what Razorpay "really" captured. This is the new
+// authoritative check: the browser can lie, Razorpay cannot.
+globalThis.fetch = async (url) => {
+  if (String(url).includes('api.razorpay.com/v1/payments/')) {
+    if (scenario.rzpHttpError) return { ok: false, status: 404, json: async () => ({}) };
+    return { ok: true, status: 200, json: async () => scenario.rzpPayment };
+  }
+  throw new Error('unexpected fetch: ' + url);
+};
 
 // ── Supabase stub ────────────────────────────────────────────────────────────
 // Behaviour is driven by `scenario`, letting each test force a specific DB result.
@@ -79,11 +91,18 @@ function mockRes() {
 }
 
 async function call(body, sc = {}) {
-  scenario = sc;
+  // default to a genuine captured Rs.9 payment unless a test overrides it
+  scenario = { rzpPayment: goodRzp(body.razorpay_payment_id), ...sc };
   const res = mockRes();
   await handler({ method: 'POST', body }, res);
   return res;
 }
+
+// What Razorpay reports for a genuine, captured Rs.9 monthly payment.
+const goodRzp = (paymentId = 'pay_TEST1', over = {}) => ({
+  id: paymentId, entity: 'payment', amount: 900, currency: 'INR',
+  status: 'captured', captured: true, order_id: 'order_TEST1', ...over,
+});
 
 const validBody = (plan = 'monthly', paymentId = 'pay_TEST1') => ({
   razorpay_order_id:   'order_TEST1',
@@ -110,14 +129,59 @@ test('1/8. valid monthly payment activates Pro', async () => {
   assert.ok(res.body.expires_at, 'expires_at must be echoed from the DB');
 });
 
-// 9. Valid yearly activation
-test('9. valid yearly payment activates Pro for 12 months', async () => {
+// TEST BUILD: yearly is DISABLED so nobody can get 12 months for Rs.9
+test('S1. yearly plan is REJECTED during the Rs.9 test (no 12 months for Rs.9)', async () => {
   const res = await call(validBody('yearly'), { updatedRows: activatedRow(12) });
+  assert.strictEqual(res.statusCode, 400);
+  assert.match(res.body.error, /Invalid plan/);
+});
+
+// ── Razorpay authoritative-amount checks (the new security layer) ────────────
+test('S2. captured amount Rs.9 (900 paise) -> success', async () => {
+  const res = await call(validBody(), {
+    rzpPayment: goodRzp('pay_TEST1', { amount: 900 }),
+    updatedRows: activatedRow(1),
+  });
   assert.strictEqual(res.statusCode, 200);
   assert.strictEqual(res.body.success, true);
-  const months = (new Date(res.body.expires_at).getFullYear() - new Date().getFullYear()) * 12
-               + (new Date(res.body.expires_at).getMonth() - new Date().getMonth());
-  assert.ok(months >= 11 && months <= 12, `expected ~12 months, got ${months}`);
+});
+
+test('S3. captured amount Re.1 (100 paise) -> REJECTED, no activation', async () => {
+  const res = await call(validBody(), {
+    rzpPayment: goodRzp('pay_TEST1', { amount: 100 }),   // paid Re.1
+    updatedRows: activatedRow(1),                         // would have activated
+  });
+  assert.strictEqual(res.statusCode, 400);
+  assert.strictEqual(res.body.success, false);
+});
+
+test('S4. payment NOT captured (authorized) -> REJECTED', async () => {
+  const res = await call(validBody(), {
+    rzpPayment: goodRzp('pay_TEST1', { status: 'authorized', captured: false }),
+    updatedRows: activatedRow(1),
+  });
+  assert.strictEqual(res.statusCode, 400);
+});
+
+test('S5. wrong currency (USD) -> REJECTED', async () => {
+  const res = await call(validBody(), {
+    rzpPayment: goodRzp('pay_TEST1', { currency: 'USD' }),
+    updatedRows: activatedRow(1),
+  });
+  assert.strictEqual(res.statusCode, 400);
+});
+
+test('S6. order_id mismatch -> REJECTED', async () => {
+  const res = await call(validBody(), {
+    rzpPayment: goodRzp('pay_TEST1', { order_id: 'order_SOMEONE_ELSE' }),
+    updatedRows: activatedRow(1),
+  });
+  assert.strictEqual(res.statusCode, 400);
+});
+
+test('S7. payment does not exist at Razorpay (404) -> REJECTED', async () => {
+  const res = await call(validBody(), { rzpHttpError: true, updatedRows: activatedRow(1) });
+  assert.strictEqual(res.statusCode, 400);
 });
 
 // 2. Invalid signature

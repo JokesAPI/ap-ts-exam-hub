@@ -1,14 +1,7 @@
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 
-// ── Server-side plan catalogue ────────────────────────────────────────────────
-// The browser sends a plan *id* only. Duration and amount are resolved HERE, so a
-// tampered client cannot buy a year for a month's price or invent a plan.
-// Prices mirror src/pages/public/Subscribe.jsx — pricing is NOT changed here.
-const PLANS = {
-  monthly: { months: 1,  amount: 199 },
-  yearly:  { months: 12, amount: 999 },
-};
+import { resolvePlan, CURRENCY } from './_plans.js';
 
 const isNonEmptyString = v => typeof v === 'string' && v.trim().length > 0;
 const UNIQUE_VIOLATION = '23505'; // payments has UNIQUE(razorpay_payment_id)
@@ -37,10 +30,11 @@ export default async function handler(req, res) {
       return res.status(400).json({ success: false, error: 'Missing required fields' });
     }
 
-    // Reject unknown plans; never trust an amount from the browser.
-    const planConfig = PLANS[plan];
+    // Reject unknown or currently-disabled plans (e.g. 'yearly' during the test).
+    // The amount is NEVER taken from the browser.
+    const planConfig = resolvePlan(plan);
     if (!planConfig) {
-      console.error('Rejected unknown plan:', plan);
+      console.error('Rejected unknown/disabled plan:', plan);
       return res.status(400).json({ success: false, error: 'Invalid plan' });
     }
 
@@ -62,7 +56,50 @@ export default async function handler(req, res) {
       return res.status(400).json({ success: false, error: 'Payment verification failed' });
     }
 
-    // ── 3. Supabase service-role client ─────────────────────────────────────
+    // ── 3. Verify the REAL payment with Razorpay (authoritative) ────────────
+    // The signature only proves the payload came from Razorpay's checkout. It does
+    // NOT prove what was actually captured. Without this step a crafted request
+    // could pay Re.1 (or nothing) and still be granted Pro. We therefore ask
+    // Razorpay directly what it captured, and require an exact match.
+    const razorpayKeyId = process.env.RAZORPAY_KEY_ID;
+    if (!razorpayKeyId) {
+      console.error('RAZORPAY_KEY_ID not set');
+      return res.status(500).json({ success: false, error: 'Server configuration error' });
+    }
+
+    const rzpAuth = Buffer.from(`${razorpayKeyId}:${razorpaySecret}`).toString('base64');
+    let payment;
+    try {
+      const rzpRes = await fetch(
+        `https://api.razorpay.com/v1/payments/${encodeURIComponent(razorpay_payment_id)}`,
+        { headers: { Authorization: `Basic ${rzpAuth}` } }
+      );
+      if (!rzpRes.ok) {
+        console.error('Razorpay fetch failed:', rzpRes.status, razorpay_payment_id);
+        return res.status(400).json({ success: false, error: 'Payment verification failed' });
+      }
+      payment = await rzpRes.json();
+    } catch (e) {
+      console.error('Razorpay fetch error:', e);
+      return res.status(502).json({ success: false, error: 'Payment verification failed' });
+    }
+
+    // Every one of these must hold. Any mismatch => do not activate, do not record.
+    const checks = [
+      [payment && payment.id === razorpay_payment_id, 'payment id mismatch'],
+      [payment.status === 'captured',                 `status is '${payment.status}', not captured`],
+      [payment.captured === true,                     'captured flag is not true'],
+      [payment.amount === planConfig.amountPaise,     `amount ${payment.amount} != expected ${planConfig.amountPaise}`],
+      [payment.currency === CURRENCY,                 `currency ${payment.currency} != ${CURRENCY}`],
+      [payment.order_id === razorpay_order_id,        'order_id does not match'],
+    ];
+    const failed = checks.find(([ok]) => !ok);
+    if (failed) {
+      console.error('Razorpay payment rejected:', failed[1], razorpay_payment_id);
+      return res.status(400).json({ success: false, error: 'Payment verification failed' });
+    }
+
+    // ── 4. Supabase service-role client ─────────────────────────────────────
     // Required: a trigger (protect_premium_profile_fields) permits is_pro changes
     // only for service_role.
     if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -88,7 +125,7 @@ export default async function handler(req, res) {
         razorpay_payment_id,
         razorpay_signature,
         plan,
-        amount: planConfig.amount,   // server-side amount
+        amount: planConfig.amountRupees,   // server-side amount (never the browser's)
         status: 'success',
         created_at: now.toISOString(),
       });

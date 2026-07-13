@@ -21,18 +21,21 @@ const PLANS = [
   {
     id:       'monthly',
     label:    'Monthly',
-    price:    199,
+    price:    9,        // TEST BUILD: was 199
     original: 399,
     period:   '/month',
     badge:    null,
   },
   {
-    id:       'yearly',
-    label:    'Yearly',
-    price:    999,
-    original: 4788,
-    period:   '/year',
-    badge:    'Best Value -- Save 79%',
+    id:        'yearly',
+    label:     'Yearly',
+    price:     999,
+    original:  4788,
+    period:    '/year',
+    badge:     'Temporarily unavailable',
+    disabled:  true,     // TEST BUILD: yearly checkout is disabled so nobody can
+                         // obtain 12 months at the Rs.9 test price. The server
+                         // also rejects plan='yearly' (api/_plans.js).
   },
 ]
 
@@ -69,15 +72,17 @@ export default function Subscribe() {
         return
       }
 
-      const plan  = PLANS.find(p => p.id === selectedPlan)
-      const amount = plan.price * 100 // Razorpay needs paise
+      const plan = PLANS.find(p => p.id === selectedPlan)
+      if (plan?.disabled) { toast.error('This plan is temporarily unavailable.'); setLoading(false); return }
+      // NOTE: the amount is NOT sent. /api/create-order derives it server-side
+      // from the plan id, so the browser cannot choose what it pays.
 
       // ── Step 2: Create order via Supabase Edge Function ─────────────────────
       // IMPORTANT: Order creation on server, not client
       const orderRes = await fetch('/api/create-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount, plan: selectedPlan, user_id: user.id }),
+        body: JSON.stringify({ plan: selectedPlan, user_id: user.id }),
       })
 
       if (!orderRes.ok) {
@@ -85,13 +90,14 @@ export default function Subscribe() {
         throw new Error(err.error || 'Failed to create order')
       }
 
-      const { order_id } = await orderRes.json()
+      // amount/currency come from the SERVER, not from this page.
+      const { order_id, amount: orderAmount, currency: orderCurrency } = await orderRes.json()
 
       // ── Step 3: Open Razorpay checkout ──────────────────────────────────────
       const options = {
         key:         import.meta.env.VITE_RAZORPAY_KEY_ID, // Only KEY ID -- never secret
-        amount,
-        currency:    'INR',
+        amount:      orderAmount,      // server-derived (paise)
+        currency:    orderCurrency,    // server-derived
         name:        'AP TS Exam Hub',
         description: `Pro Plan -- ${plan.label}`,
         order_id,
@@ -189,10 +195,12 @@ export default function Subscribe() {
         {/* Plan selector */}
         <div className="grid sm:grid-cols-2 gap-4 mb-8">
           {PLANS.map(plan => (
-            <button key={plan.id} onClick={() => setSelectedPlan(plan.id)}
-              className={`card p-6 text-left transition-all border-2 ${selectedPlan === plan.id ? 'border-primary-500 shadow-lg' : 'border-transparent hover:border-primary-300'}`}>
+            <button key={plan.id}
+              onClick={() => { if (!plan.disabled) setSelectedPlan(plan.id) }}
+              disabled={plan.disabled}
+              className={`card p-6 text-left transition-all border-2 ${plan.disabled ? 'opacity-50 cursor-not-allowed border-transparent' : selectedPlan === plan.id ? 'border-primary-500 shadow-lg' : 'border-transparent hover:border-primary-300'}`}>
               {plan.badge && (
-                <span className="inline-block bg-green-100 text-green-700 text-xs font-bold px-2 py-0.5 rounded-full mb-2">
+                <span className={`inline-block text-xs font-bold px-2 py-0.5 rounded-full mb-2 ${plan.disabled ? 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400' : 'bg-green-100 text-green-700'}`}>
                   {plan.badge}
                 </span>
               )}
@@ -202,7 +210,7 @@ export default function Subscribe() {
               </div>
               <p className="text-xs text-gray-400 line-through">Rs.{plan.original}</p>
               <p className="text-sm font-semibold mt-2">{plan.label} Plan</p>
-              {selectedPlan === plan.id && (
+              {!plan.disabled && selectedPlan === plan.id && (
                 <div className="mt-2 flex items-center gap-1 text-primary-600 text-xs font-medium">
                   <CheckCircle className="h-3.5 w-3.5" /> Selected
                 </div>

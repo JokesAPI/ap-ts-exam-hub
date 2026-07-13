@@ -629,7 +629,7 @@ export default function GeniusAI() {
             </div>
             <div className="text-center flex-shrink-0">
               <p className="text-sm text-gray-400 line-through">Rs.399/month</p>
-              <p className="text-5xl font-extrabold text-primary-600">Rs.199</p>
+              <p className="text-5xl font-extrabold text-primary-600">Rs.9</p>
               <p className="text-gray-400 text-sm mb-3">/month after free trial</p>
               <a href="/subscribe" className="btn-primary px-8 py-2.5 inline-flex text-sm">View Plans</a>
             </div>
