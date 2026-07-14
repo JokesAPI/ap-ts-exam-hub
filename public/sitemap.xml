@@ -7,8 +7,9 @@
   <url><loc>https://ap-ts-exam-hub.vercel.app/exams</loc><priority>0.8</priority><changefreq>weekly</changefreq></url>
   <url><loc>https://ap-ts-exam-hub.vercel.app/previous-papers</loc><priority>0.8</priority><changefreq>weekly</changefreq></url>
   <url><loc>https://ap-ts-exam-hub.vercel.app/notifications</loc><priority>0.7</priority><changefreq>daily</changefreq></url>
-  <url><loc>https://ap-ts-exam-hub.vercel.app/quiz</loc><priority>0.7</priority><changefreq>daily</changefreq></url>
-  <url><loc>https://ap-ts-exam-hub.vercel.app/jobs</loc><priority>0.7</priority><changefreq>daily</changefreq></url>
+  <url><loc>https://ap-ts-exam-hub.vercel.app/daily-quiz</loc><priority>0.7</priority><changefreq>daily</changefreq></url>
+  <url><loc>https://ap-ts-exam-hub.vercel.app/job-alerts</loc><priority>0.7</priority><changefreq>daily</changefreq></url>
   <url><loc>https://ap-ts-exam-hub.vercel.app/about</loc><priority>0.5</priority><changefreq>monthly</changefreq></url>
   <url><loc>https://ap-ts-exam-hub.vercel.app/contact</loc><priority>0.5</priority><changefreq>monthly</changefreq></url>
+  <url><loc>https://ap-ts-exam-hub.vercel.app/privacy-policy</loc><priority>0.3</priority><changefreq>yearly</changefreq></url>
 </urlset>
