@@ -98,9 +98,9 @@ async function call(body, sc = {}) {
   return res;
 }
 
-// What Razorpay reports for a genuine, captured Rs.9 monthly payment.
+// What Razorpay reports for a genuine, captured Rs.199 monthly payment (production pricing).
 const goodRzp = (paymentId = 'pay_TEST1', over = {}) => ({
-  id: paymentId, entity: 'payment', amount: 900, currency: 'INR',
+  id: paymentId, entity: 'payment', amount: 19900, currency: 'INR',
   status: 'captured', captured: true, order_id: 'order_TEST1', ...over,
 });
 
@@ -129,21 +129,33 @@ test('1/8. valid monthly payment activates Pro', async () => {
   assert.ok(res.body.expires_at, 'expires_at must be echoed from the DB');
 });
 
-// TEST BUILD: yearly is DISABLED so nobody can get 12 months for Rs.9
-test('S1. yearly plan is REJECTED during the Rs.9 test (no 12 months for Rs.9)', async () => {
-  const res = await call(validBody('yearly'), { updatedRows: activatedRow(12) });
-  assert.strictEqual(res.statusCode, 400);
-  assert.match(res.body.error, /Invalid plan/);
+// PRODUCTION PRICING: yearly is a valid, priced plan (12 months, Rs.999)
+test('S1. yearly plan is ACCEPTED at production pricing (Rs.999, 12 months)', async () => {
+  const res = await call(validBody('yearly'), {
+    rzpPayment: goodRzp('pay_TEST1', { amount: 99900 }),
+    updatedRows: activatedRow(12),
+  });
+  assert.strictEqual(res.statusCode, 200);
+  assert.strictEqual(res.body.success, true);
 });
 
-// ── Razorpay authoritative-amount checks (the new security layer) ────────────
-test('S2. captured amount Rs.9 (900 paise) -> success', async () => {
+// ── Razorpay authoritative-amount checks (the security layer) ────────────
+test('S2. captured amount Rs.199 (19900 paise) -> success', async () => {
   const res = await call(validBody(), {
-    rzpPayment: goodRzp('pay_TEST1', { amount: 900 }),
+    rzpPayment: goodRzp('pay_TEST1', { amount: 19900 }),
     updatedRows: activatedRow(1),
   });
   assert.strictEqual(res.statusCode, 200);
   assert.strictEqual(res.body.success, true);
+});
+
+test('S2b. captured amount Rs.9 (900 paise, the OLD test price) -> REJECTED post-restore', async () => {
+  const res = await call(validBody(), {
+    rzpPayment: goodRzp('pay_TEST1', { amount: 900 }),
+    updatedRows: activatedRow(1),
+  });
+  assert.strictEqual(res.statusCode, 400);
+  assert.strictEqual(res.body.success, false);
 });
 
 test('S3. captured amount Re.1 (100 paise) -> REJECTED, no activation', async () => {

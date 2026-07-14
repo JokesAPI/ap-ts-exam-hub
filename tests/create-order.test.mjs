@@ -28,23 +28,23 @@ const call = async body => { captured = null; const res = mockRes(); await handl
 const tests = [];
 const test = (n, f) => tests.push({ n, f });
 
-test('C1. browser sends amount=100 (Re.1) but plan=monthly -> server still creates 900 paise', async () => {
+test('C1. browser sends amount=100 (Re.1) but plan=monthly -> server still creates 19900 paise', async () => {
   const res = await call({ amount: 100, plan: 'monthly', user_id: 'u1' });   // hostile client
   assert.strictEqual(res.statusCode, 200);
-  assert.strictEqual(captured.amount, 900, 'server MUST ignore the browser amount');
+  assert.strictEqual(captured.amount, 19900, 'server MUST ignore the browser amount');
   assert.strictEqual(captured.currency, 'INR');
-  assert.strictEqual(res.body.amount, 900, 'response must echo the server amount');
+  assert.strictEqual(res.body.amount, 19900, 'response must echo the server amount');
 });
 
-test('C2. browser sends amount=1 crore -> still 900 paise', async () => {
+test('C2. browser sends amount=1 crore -> still 19900 paise', async () => {
   await call({ amount: 100000000, plan: 'monthly', user_id: 'u1' });
-  assert.strictEqual(captured.amount, 900);
+  assert.strictEqual(captured.amount, 19900);
 });
 
-test('C3. yearly plan is rejected (disabled during the test)', async () => {
+test('C3. yearly plan is accepted at production pricing (99900 paise)', async () => {
   const res = await call({ plan: 'yearly', user_id: 'u1' });
-  assert.strictEqual(res.statusCode, 400);
-  assert.match(res.body.error, /Invalid plan/);
+  assert.strictEqual(res.statusCode, 200);
+  assert.strictEqual(captured.amount, 99900, 'yearly must charge Rs.999');
 });
 
 test('C4. unknown plan is rejected', async () => {

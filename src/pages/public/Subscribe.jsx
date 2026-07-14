@@ -21,7 +21,7 @@ const PLANS = [
   {
     id:       'monthly',
     label:    'Monthly',
-    price:    9,        // TEST BUILD: was 199
+    price:    199,
     original: 399,
     period:   '/month',
     badge:    null,
@@ -32,10 +32,7 @@ const PLANS = [
     price:     999,
     original:  4788,
     period:    '/year',
-    badge:     'Temporarily unavailable',
-    disabled:  true,     // TEST BUILD: yearly checkout is disabled so nobody can
-                         // obtain 12 months at the Rs.9 test price. The server
-                         // also rejects plan='yearly' (api/_plans.js).
+    badge:     'Best Value -- Save 79%',
   },
 ]
 

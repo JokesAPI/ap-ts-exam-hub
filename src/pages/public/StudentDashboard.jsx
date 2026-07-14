@@ -66,7 +66,7 @@ export default function StudentDashboard() {
           <div className="card p-5 mb-6 bg-gradient-to-r from-purple-600 to-primary-600 text-white">
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div>
-                <p className="font-bold text-lg">Upgrade to Pro — ₹9/month</p>
+                <p className="font-bold text-lg">Upgrade to Pro — ₹199/month</p>
                 <p className="text-purple-100 text-sm">Unlimited Genius AI + Mock Tests + Study Plans</p>
               </div>
               <Link to="/subscribe" className="bg-white text-purple-700 font-bold px-5 py-2 rounded-xl hover:bg-purple-50 transition-colors text-sm">
