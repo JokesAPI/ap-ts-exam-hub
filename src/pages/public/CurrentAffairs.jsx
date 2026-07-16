@@ -4,7 +4,7 @@ import { Newspaper, Search, ExternalLink, Eye, EyeOff } from 'lucide-react'
 import Layout from '../../components/Layout'
 import { supabase } from '../../lib/supabase'
 
-const categories = ['All', 'National', 'State AP', 'State TS', 'Economy', 'Science & Tech', 'Sports', 'Awards', 'International']
+const categories = ['All', 'National', 'Economy', 'Science & Tech', 'Sports', 'Awards', 'International']
 
 const PAGE_SIZE = 10
 
