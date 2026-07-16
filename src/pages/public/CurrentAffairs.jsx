@@ -6,6 +6,48 @@ import { supabase } from '../../lib/supabase'
 
 const categories = ['All', 'National', 'State AP', 'State TS', 'Economy', 'Science & Tech', 'Sports', 'Awards', 'International']
 
+const PAGE_SIZE = 10
+
+// ── Date range helpers (local time — published_date has no timezone component) ─
+function toDateStr(d) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+function startOfWeek(d) {
+  // ISO week: Monday start
+  const day = d.getDay() // 0=Sun..6=Sat
+  const diff = (day === 0 ? -6 : 1) - day
+  const monday = new Date(d)
+  monday.setDate(d.getDate() + diff)
+  return monday
+}
+
+function startOfMonth(d) {
+  return new Date(d.getFullYear(), d.getMonth(), 1)
+}
+
+// Returns { gte, lte } date strings for the current range, or null for 'all'
+function dateRangeFor(rangeKey) {
+  const now = new Date()
+  const todayStr = toDateStr(now)
+  if (rangeKey === 'today') return { gte: todayStr, lte: todayStr }
+  if (rangeKey === 'week')  return { gte: toDateStr(startOfWeek(now)), lte: todayStr }
+  if (rangeKey === 'month') return { gte: toDateStr(startOfMonth(now)), lte: todayStr }
+  return null
+}
+
+// Escape ILIKE wildcards (Postgres honors backslash for these) and strip
+// characters PostgREST's .or() mini-language treats as syntax (comma, parens,
+// quotes) so free-text input can never be interpreted as filter syntax.
+function sanitizeSearchTerm(term) {
+  return term.trim()
+    .replace(/[,()"]/g, '')
+    .replace(/[%_]/g, '\\$&')
+}
+
 // ── Content parser ───────────────────────────────────────────────────────────
 // AI-generated articles store one plain-text blob with stable markers:
 //   <english>  📝 MCQ Practice: <q + A-D + Answer + Explanation>
@@ -121,18 +163,69 @@ function McqCard({ mcq }) {
 export default function CurrentAffairs() {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
+  const [totalCount, setTotalCount] = useState(0)
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [cat, setCat] = useState('All')
+  const [dateFilter, setDateFilter] = useState('all') // 'all' | 'today' | 'week' | 'month'
+  const [page, setPage] = useState(0) // 0-indexed
+
+  // Debounce search input so we don't fire a query per keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300)
+    return () => clearTimeout(t)
+  }, [search])
+
+  // Reset to first page whenever a filter changes.
+  useEffect(() => {
+    setPage(0)
+  }, [cat, dateFilter, debouncedSearch])
 
   useEffect(() => {
-    supabase.from('current_affairs').select('*').order('published_date', { ascending: false })
-      .then(({ data }) => { setItems(data || []); setLoading(false) })
-  }, [])
+    let cancelled = false
+    setLoading(true)
 
-  const filtered = items.filter(a =>
-    (cat === 'All' || a.category === cat) &&
-    (a.title.toLowerCase().includes(search.toLowerCase()) || (a.content || '').toLowerCase().includes(search.toLowerCase()))
-  )
+    let query = supabase
+      .from('current_affairs')
+      .select('*', { count: 'exact' })
+      .order('published_date', { ascending: false })
+      .order('id', { ascending: false })
+
+    if (cat !== 'All') {
+      query = query.eq('category', cat)
+    }
+
+    const range = dateRangeFor(dateFilter)
+    if (range) {
+      query = query.gte('published_date', range.gte).lte('published_date', range.lte)
+    }
+
+    const term = sanitizeSearchTerm(debouncedSearch)
+    if (term) {
+      query = query.or(`title.ilike.%${term}%,content.ilike.%${term}%`)
+    }
+
+    const from = page * PAGE_SIZE
+    const to = from + PAGE_SIZE - 1
+    query = query.range(from, to)
+
+    query.then(({ data, count, error }) => {
+      if (cancelled) return
+      if (error) {
+        console.error('Current affairs query error:', error)
+        setItems([])
+        setTotalCount(0)
+      } else {
+        setItems(data || [])
+        setTotalCount(count ?? 0)
+      }
+      setLoading(false)
+    })
+
+    return () => { cancelled = true }
+  }, [cat, dateFilter, debouncedSearch, page])
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE))
 
   return (
     <Layout>
@@ -151,6 +244,20 @@ export default function CurrentAffairs() {
           </div>
         </div>
 
+        <div className="flex flex-wrap gap-2 mb-3">
+          {[
+            { key: 'all', label: 'All Time' },
+            { key: 'today', label: 'Today' },
+            { key: 'week', label: 'This Week' },
+            { key: 'month', label: 'This Month' },
+          ].map(d => (
+            <button key={d.key} onClick={() => setDateFilter(d.key)}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${dateFilter === d.key ? 'bg-primary-600 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'}`}>
+              {d.label}
+            </button>
+          ))}
+        </div>
+
         <div className="flex flex-wrap gap-2 mb-6">
           {categories.map(c => (
             <button key={c} onClick={() => setCat(c)}
@@ -162,11 +269,11 @@ export default function CurrentAffairs() {
 
         {loading ? (
           <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div></div>
-        ) : filtered.length === 0 ? (
+        ) : items.length === 0 ? (
           <div className="text-center py-16 text-gray-400">No articles found.</div>
         ) : (
           <div className="grid gap-4">
-            {filtered.map(a => {
+            {items.map(a => {
               const parsed = parseArticle(a.content)
               const isStructured = !!(parsed.mcq || parsed.telugu || parsed.sourceUrl)
               return (
@@ -214,6 +321,26 @@ export default function CurrentAffairs() {
                 </article>
               )
             })}
+          </div>
+        )}
+
+        {!loading && items.length > 0 && totalPages > 1 && (
+          <div className="flex items-center justify-center gap-4 mt-8">
+            <button
+              onClick={() => setPage(p => Math.max(0, p - 1))}
+              disabled={page === 0}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+              Previous
+            </button>
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              Page {page + 1} of {totalPages}
+            </span>
+            <button
+              onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+              disabled={page >= totalPages - 1}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+              Next
+            </button>
           </div>
         )}
       </div>
