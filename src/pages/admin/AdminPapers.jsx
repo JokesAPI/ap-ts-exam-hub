@@ -33,10 +33,10 @@ export default function AdminPapers() {
     setUploading(true)
     const ext = file.name.split('.').pop()
     const path = `papers/${Date.now()}.${ext}`
-    const { error } = await supabase.storage.from('pdfs').upload(path, file)
+    const { error } = await supabase.storage.from('previous-papers').upload(path, file)
     setUploading(false)
     if (error) { toast.error('Upload failed: ' + error.message); return null }
-    const { data } = supabase.storage.from('pdfs').getPublicUrl(path)
+    const { data } = supabase.storage.from('previous-papers').getPublicUrl(path)
     return data.publicUrl
   }
 
