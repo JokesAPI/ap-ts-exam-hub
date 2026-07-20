@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Trash2, Pencil, Plus, Upload, Search, CheckCircle, Bot, X, FileSpreadsheet } from 'lucide-react'
+import { Trash2, Pencil, Plus, Upload, Search, CheckCircle, Bot, X, FileSpreadsheet, RotateCcw } from 'lucide-react'
 import AdminLayout from '../../components/AdminLayout'
 import Modal from '../../components/Modal'
 import { supabase } from '../../lib/supabase'
@@ -30,6 +30,7 @@ const statusBadge = s => ({
 export default function AdminQuestions() {
   const [items, setItems] = useState([])
   const [exams, setExams] = useState([])
+  const [tests, setTests] = useState([])           // QA fix #2: mock_tests for the dropdown
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(false)
   const [importModal, setImportModal] = useState(false)
@@ -38,6 +39,7 @@ export default function AdminQuestions() {
   const [saving, setSaving] = useState(false)
   const [importText, setImportText] = useState('')
   const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState(null) // QA fix #4: { imported, skipped, errors }
   const [selected, setSelected] = useState(new Set())
 
   // filters
@@ -99,6 +101,15 @@ export default function AdminQuestions() {
       .order('display_order').then(({ data }) => setExams(data || []))
   }, [])
 
+  // QA fix #2: load the mock test catalog so admins pick a test by name
+  // instead of typing test_id from memory. No filter on is_active -- admins
+  // manage inactive tests too, and mock_tests_write_admin (ALL) covers this
+  // SELECT for an admin regardless of is_active.
+  useEffect(() => {
+    supabase.from('mock_tests').select('test_id, title').order('display_order')
+      .then(({ data }) => setTests(data || []))
+  }, [])
+
   // subject facet: narrow column, capped, run once -- not on every filter/page
   // change. Same reasoning as PreviousPapers.jsx's facet query: this scales
   // with row count rather than distinct-value count; fine at today's volume,
@@ -146,6 +157,7 @@ export default function AdminQuestions() {
 
   async function save() {
     if (!form.question?.trim()) { toast.error('Question text required'); return }
+    if (!form.test_id) { toast.error('Mock Test is required'); return }
     if (!['A', 'B', 'C', 'D'].includes(form.correct_answer)) { toast.error('Correct answer must be A/B/C/D'); return }
     if (!form.option_a?.trim() || !form.option_b?.trim() || !form.option_c?.trim() || !form.option_d?.trim()) {
       toast.error('All four options (A-D) are required'); return
@@ -169,6 +181,15 @@ export default function AdminQuestions() {
     toast.success('Deleted'); load()
   }
 
+  // QA fix #3: Published/Approved -> Draft, single question. Reuses the same
+  // update path as save()/bulkSetStatus() -- no new write logic, no change to
+  // the existing forward publish flow.
+  async function moveToDraft(id) {
+    const { error } = await supabase.from('mock_questions').update({ status: 'draft' }).eq('id', id)
+    if (error) { toast.error(error.message); return }
+    toast.success('Moved to Draft'); load()
+  }
+
   // -- Bulk import (JSON array) -----------------------------------------------
   async function bulkImport() {
     let rows
@@ -179,12 +200,20 @@ export default function AdminQuestions() {
     if (rows.length === 0) { toast.error('No questions in array'); return }
 
     const payloads = []
+    const errors = []
     for (const [i, r] of rows.entries()) {
+      const rowNum = i + 1
+      // QA fix #1: test_id is NOT NULL in production -- validate it here with
+      // a friendly message instead of letting the insert fail on a raw
+      // Postgres constraint error.
+      if (!r.test_id || !String(r.test_id).trim()) {
+        errors.push({ row: rowNum, reason: 'test_id is required (must match an existing Mock Test)' }); continue
+      }
       if (!r.question || !['A', 'B', 'C', 'D'].includes(r.correct_answer)) {
-        toast.error(`Row ${i + 1}: missing question or invalid correct_answer`); return
+        errors.push({ row: rowNum, reason: 'missing question or invalid correct_answer' }); continue
       }
       if (!r.option_a || !r.option_b || !r.option_c || !r.option_d) {
-        toast.error(`Row ${i + 1}: all four options (option_a-option_d) are required`); return
+        errors.push({ row: rowNum, reason: 'all four options (option_a-option_d) are required' }); continue
       }
       payloads.push(buildPayload({
         ...empty, ...r,
@@ -192,12 +221,27 @@ export default function AdminQuestions() {
         status: r.status || 'draft', // imported questions default to DRAFT (never auto-published)
       }))
     }
+
+    if (payloads.length === 0) {
+      setImportResult({ imported: 0, skipped: errors.length, errors })
+      toast.error('No valid rows to import — see details below')
+      return
+    }
+
     setImporting(true)
     const { error } = await supabase.from('mock_questions').insert(payloads)
     setImporting(false)
-    if (error) { toast.error(error.message); return }
-    toast.success(`Imported ${payloads.length} questions as drafts`)
-    setImportModal(false); setImportText(''); load()
+    if (error) {
+      // A single insert() call is one statement -- on failure none of the
+      // otherwise-valid rows were written. Reported as one entry rather than
+      // guessing which row triggered it.
+      setImportResult({ imported: 0, skipped: rows.length, errors: [{ row: '-', reason: error.message }] })
+      toast.error('Import failed — see details below')
+      return
+    }
+    setImportResult({ imported: payloads.length, skipped: errors.length, errors })
+    toast.success(`Imported ${payloads.length} of ${rows.length} questions as drafts`)
+    setImportText(''); load()
   }
 
   // -- CSV import (dependency-free) -> same JSON import path ------------------
@@ -257,7 +301,7 @@ export default function AdminQuestions() {
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <h1 className="text-2xl font-bold">Question Bank</h1>
         <div className="flex gap-2">
-          <button onClick={() => setImportModal(true)} className="btn-secondary"><Upload className="h-4 w-4" /> Bulk Import</button>
+          <button onClick={() => { setImportResult(null); setImportModal(true) }} className="btn-secondary"><Upload className="h-4 w-4" /> Bulk Import</button>
           <button onClick={openAdd} className="btn-primary"><Plus className="h-4 w-4" /> Add Question</button>
         </div>
       </div>
@@ -292,6 +336,7 @@ export default function AdminQuestions() {
           <span className="text-sm font-medium">{selected.size} selected</span>
           <button onClick={() => bulkSetStatus('approved')} className="btn-secondary text-xs py-1.5"><CheckCircle className="h-3.5 w-3.5" /> Approve</button>
           <button onClick={() => bulkSetStatus('published')} className="btn-primary text-xs py-1.5"><CheckCircle className="h-3.5 w-3.5" /> Publish</button>
+          <button onClick={() => bulkSetStatus('draft')} className="btn-secondary text-xs py-1.5"><RotateCcw className="h-3.5 w-3.5" /> Move to Draft</button>
           <button onClick={() => bulkSetStatus('rejected')} className="btn-secondary text-xs py-1.5 text-red-600">Reject</button>
           <button onClick={() => setSelected(new Set())} className="text-gray-400 hover:text-gray-600 ml-auto"><X className="h-4 w-4" /></button>
         </div>
@@ -331,6 +376,9 @@ export default function AdminQuestions() {
                   <td className="px-3 py-3"><span className={`badge ${statusBadge(q.status)}`}>{q.status}</span></td>
                   <td className="px-3 py-3">
                     <div className="flex gap-2">
+                      {(q.status === 'published' || q.status === 'approved') && (
+                        <button onClick={() => moveToDraft(q.id)} title="Move to Draft" className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500"><RotateCcw className="h-3.5 w-3.5" /></button>
+                      )}
                       <button onClick={() => openEdit(q)} className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500"><Pencil className="h-3.5 w-3.5" /></button>
                       <button onClick={() => remove(q.id)} className="p-1.5 rounded hover:bg-red-100 text-gray-500 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>
                     </div>
@@ -392,8 +440,11 @@ export default function AdminQuestions() {
                 <option value="">-- none (topic pool) --</option>
                 {exams.map(e => <option key={e.id} value={e.id}>{e.title}</option>)}
               </select></div>
-            <div><label className="block text-sm font-medium mb-1">Test ID (legacy key)</label>
-              <input className="input" placeholder="e.g. indian-polity" value={form.test_id} onChange={e => setForm({ ...form, test_id: e.target.value })} /></div>
+            <div><label className="block text-sm font-medium mb-1">Mock Test *</label>
+              <select className="input" value={form.test_id} onChange={e => setForm({ ...form, test_id: e.target.value })}>
+                <option value="">— select a test —</option>
+                {tests.map(t => <option key={t.test_id} value={t.test_id}>{t.title}</option>)}
+              </select></div>
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div><label className="block text-sm font-medium mb-1">Subject</label>
@@ -428,22 +479,40 @@ export default function AdminQuestions() {
       </Modal>
 
       {/* Bulk import modal */}
-      <Modal open={importModal} onClose={() => setImportModal(false)} title="Bulk Import Questions" maxWidth="max-w-2xl">
+      <Modal open={importModal} onClose={() => { setImportModal(false); setImportResult(null) }} title="Bulk Import Questions" maxWidth="max-w-2xl">
         <div className="space-y-3">
           <p className="text-sm text-gray-500">
-            Paste a JSON array. Each object needs at least <code>question</code> and <code>correct_answer</code> (A/B/C/D).
-            Optional: option_a-d, explanation, subject, topic, subtopic, difficulty, test_id, source, source_year, tags.
+            Paste a JSON array. Each object needs <code>question</code>, <code>correct_answer</code> (A/B/C/D),
+            option_a-d, and <b className="text-gray-700 dark:text-gray-300">test_id (REQUIRED — must match an existing Mock Test's ID)</b>.
+            Optional: explanation, subject, topic, subtopic, difficulty, source, source_year, tags.
             <b> All imported questions enter as drafts</b> -- never auto-published.
           </p>
           <label className="btn-secondary text-sm cursor-pointer inline-flex w-fit">
             <FileSpreadsheet className="h-4 w-4" /> Load CSV file
             <input type="file" accept=".csv,text/csv" className="hidden" onChange={onCsvFile} />
           </label>
-          <textarea className="input font-mono text-xs" rows={10} placeholder='[{"question":"...","option_a":"...","option_b":"...","option_c":"...","option_d":"...","correct_answer":"A","subject":"Indian Polity","difficulty":"medium"}]'
+          <textarea className="input font-mono text-xs" rows={10} placeholder='[{"test_id":"indian-polity","question":"...","option_a":"...","option_b":"...","option_c":"...","option_d":"...","correct_answer":"A","subject":"Indian Polity","difficulty":"medium"}]'
             value={importText} onChange={e => setImportText(e.target.value)} />
           <button onClick={bulkImport} disabled={importing} className="btn-primary w-full justify-center">
             {importing ? 'Importing...' : 'Import as Drafts'}
           </button>
+
+          {/* QA fix #4: imported/skipped counts + per-row validation errors, replacing the old single generic toast */}
+          {importResult && (
+            <div className="card p-3 text-sm space-y-2">
+              <p>
+                <span className="font-semibold text-green-600">{importResult.imported} imported</span>
+                {importResult.skipped > 0 && <span className="text-red-600"> · {importResult.skipped} skipped</span>}
+              </p>
+              {importResult.errors.length > 0 && (
+                <ul className="text-xs text-gray-500 dark:text-gray-400 space-y-0.5 max-h-32 overflow-y-auto">
+                  {importResult.errors.map((e, i) => (
+                    <li key={i}>Row {e.row}: {e.reason}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
         </div>
       </Modal>
     </AdminLayout>
