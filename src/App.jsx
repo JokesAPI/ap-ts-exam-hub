@@ -26,6 +26,7 @@ import AdminNotifications  from './pages/admin/AdminNotifications'
 import AdminExams          from './pages/admin/AdminExams'
 import AdminCurrentAffairs from './pages/admin/AdminCurrentAffairs'
 import AdminPapers         from './pages/admin/AdminPapers'
+import AdminQuestions      from './pages/admin/AdminQuestions'
 import AdminDrafts         from './pages/admin/AdminDrafts'
 import AdminAutomation     from './pages/admin/AdminAutomation'
 
@@ -104,6 +105,7 @@ export default function App() {
       <Route path="/admin/exams"           element={<AdminRoute><AdminExams /></AdminRoute>} />
       <Route path="/admin/current-affairs" element={<AdminRoute><AdminCurrentAffairs /></AdminRoute>} />
       <Route path="/admin/papers"          element={<AdminRoute><AdminPapers /></AdminRoute>} />
+      <Route path="/admin/questions"       element={<AdminRoute><AdminQuestions /></AdminRoute>} />
       <Route path="/admin/drafts"          element={<AdminRoute><AdminDrafts /></AdminRoute>} />
       <Route path="/admin/automation"      element={<AdminRoute><AdminAutomation /></AdminRoute>} />
 
