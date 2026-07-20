@@ -6,7 +6,7 @@ import { supabase } from '../../lib/supabase'
 import toast from 'react-hot-toast'
 
 const orgs = ['APPSC', 'TSPSC', 'AP Police', 'TS Police', 'DSC', 'RRB', 'SSC', 'Other']
-const empty = { title: '', organization: '', year: '', subject: '', description: '', pdf_url: '' }
+const empty = { title: '', exam_category: '', organization: '', year: '', subject: '', description: '', pdf_url: '' }
 
 export default function AdminPapers() {
   const [items, setItems] = useState([])
@@ -43,6 +43,7 @@ export default function AdminPapers() {
   async function save() {
     setSaving(true)
     if (!form.title.trim()) { toast.error('Title required'); setSaving(false); return }
+    if (!form.exam_category) { toast.error('Exam Category required'); setSaving(false); return }
     const pdf_url = await uploadPdf()
     if (pdf_url === null) { setSaving(false); return }
     const payload = { ...form, pdf_url: pdf_url || form.pdf_url, year: form.year ? Number(form.year) : null }
@@ -111,6 +112,11 @@ export default function AdminPapers() {
       <Modal open={modal} onClose={() => setModal(false)} title={editing ? 'Edit Paper' : 'Add Paper'}>
         <div className="space-y-4">
           <div><label className="block text-sm font-medium mb-1">Title *</label><input className="input" value={form.title} onChange={e => setForm({...form, title: e.target.value})} /></div>
+          <div><label className="block text-sm font-medium mb-1">Exam Category *</label>
+            <select className="input" value={form.exam_category || ''} onChange={e => setForm({...form, exam_category: e.target.value})}>
+              <option value="">Select</option>{orgs.map(o => <option key={o}>{o}</option>)}
+            </select>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="block text-sm font-medium mb-1">Organization</label>
               <select className="input" value={form.organization || ''} onChange={e => setForm({...form, organization: e.target.value})}>
