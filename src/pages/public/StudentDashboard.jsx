@@ -14,7 +14,14 @@ export default function StudentDashboard() {
 
   useEffect(() => {
     if (!user) { navigate('/login'); return }
-    supabase.from('mock_results').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(5)
+    // Explicit column list: `answers` and `subject_stats` are large jsonb blobs
+    // (full question text, all options and explanations for every question) and
+    // are not rendered here. select('*') downloaded them for every row.
+    supabase.from('mock_results')
+      .select('id, test_id, test_title, score, total, percentage, time_taken, created_at')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(5)
       .then(({ data }) => setResults(data || []))
   }, [user])
 
@@ -26,8 +33,12 @@ export default function StudentDashboard() {
 
   if (!user) return null
 
-  const avgScore = results.length > 0
-    ? Math.round(results.reduce((a, r) => a + (r.score / r.total * 100), 0) / results.length)
+  // Use the stored `percentage` column. Recomputing score/total discards the
+  // negative marking (-1/3 per wrong answer) that the test engine applies when
+  // the result is written, so the two values legitimately differ.
+  const scored = results.filter(r => typeof r.percentage === 'number')
+  const avgScore = scored.length > 0
+    ? Math.round(scored.reduce((a, r) => a + r.percentage, 0) / scored.length)
     : 0
 
   return (
@@ -77,11 +88,10 @@ export default function StudentDashboard() {
         )}
 
         {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
           {[
             { icon: FileText, label: 'Tests Taken', value: results.length, color: 'text-blue-500 bg-blue-50 dark:bg-blue-900/20' },
             { icon: Trophy, label: 'Avg Score', value: `${avgScore}%`, color: 'text-yellow-500 bg-yellow-50 dark:bg-yellow-900/20' },
-            { icon: Zap, label: 'Quiz Streak', value: '3 days', color: 'text-green-500 bg-green-50 dark:bg-green-900/20' },
             { icon: Star, label: 'Plan', value: isPro ? 'Pro' : 'Free', color: 'text-purple-500 bg-purple-50 dark:bg-purple-900/20' },
           ].map(({ icon: Icon, label, value, color }) => (
             <div key={label} className="card p-4">
@@ -135,10 +145,10 @@ export default function StudentDashboard() {
               <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                 {results.map(r => (
                   <tr key={r.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                    <td className="px-4 py-3 font-medium">{r.test_id}</td>
+                    <td className="px-4 py-3 font-medium">{r.test_title || r.test_id}</td>
                     <td className="px-4 py-3">
-                      <span className={`badge ${r.score/r.total >= 0.8 ? 'bg-green-100 text-green-700' : r.score/r.total >= 0.6 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
-                        {r.score}/{r.total} ({Math.round(r.score/r.total*100)}%)
+                      <span className={`badge ${typeof r.percentage !== 'number' ? 'bg-gray-100 text-gray-600' : r.percentage >= 80 ? 'bg-green-100 text-green-700' : r.percentage >= 60 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
+                        {r.score}/{r.total}{typeof r.percentage === 'number' ? ` (${r.percentage}%)` : ''}
                       </span>
                     </td>
                     <td className="px-4 py-3 hidden md:table-cell text-gray-500">{r.time_taken}s</td>
