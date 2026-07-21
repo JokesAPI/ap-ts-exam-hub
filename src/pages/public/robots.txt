@@ -1,4 +1,0 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://ap-ts-exam-hub.vercel.app/sitemap.xml
