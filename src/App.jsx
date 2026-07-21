@@ -17,6 +17,7 @@ import MockTestEngine   from './pages/public/MockTestEngine'
 import JobAlerts        from './pages/public/JobAlerts'
 import Login            from './pages/public/Login'
 import StudentDashboard from './pages/public/StudentDashboard'
+import AttemptHistory    from './pages/public/AttemptHistory'
 import Subscribe        from './pages/public/Subscribe'
 
 // Admin pages
@@ -97,6 +98,7 @@ export default function App() {
 
       {/* ── Student protected routes ── */}
       <Route path="/dashboard" element={<AuthRoute><StudentDashboard /></AuthRoute>} />
+      <Route path="/attempts"  element={<AuthRoute><AttemptHistory /></AuthRoute>} />
 
       {/* ── Admin routes — require is_admin = true ── */}
       <Route path="/admin/login"           element={<AdminLogin />} />

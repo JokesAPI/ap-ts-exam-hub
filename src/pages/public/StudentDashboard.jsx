@@ -124,7 +124,12 @@ export default function StudentDashboard() {
         </div>
 
         {/* Recent results */}
-        <h2 className="font-bold text-lg mb-4">Recent Test Results</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-bold text-lg">Recent Test Results</h2>
+          {results.length > 0 && (
+            <Link to="/attempts" className="text-sm text-primary-600 hover:underline">View all →</Link>
+          )}
+        </div>
         {results.length === 0 ? (
           <div className="card p-8 text-center text-gray-400">
             <FileText className="h-10 w-10 mx-auto mb-3 opacity-40" />
