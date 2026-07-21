@@ -1,0 +1,15 @@
+-- ROLLBACK for 20260721150000_phase6_6a_document_exams_slug_unique_index
+--
+-- This migration only documented a pre-existing index; it created nothing
+-- that did not already exist in production before Phase 6.6A. Per the
+-- approved scope ("rollback must not remove anything that existed before
+-- this migration"), this rollback is intentionally a no-op: exams_slug_key
+-- existed before 20260721150000 and must continue to exist after any
+-- rollback of it.
+--
+-- If exams_slug_key itself ever needs to be removed, that is a separate,
+-- explicitly-scoped decision (it would re-open the duplicate-slug exposure
+-- documented in the Phase 6.6 investigation) and requires its own migration
+-- and CTO approval -- not a rollback of this documentation-only change.
+--
+-- Nothing to execute here.
