@@ -19,7 +19,7 @@ export default function Exams() {
 
   const filtered = items.filter(e =>
     (filter === 'All' || e.organization === filter) &&
-    (e.title.toLowerCase().includes(search.toLowerCase()))
+    ((e.title || e.exam_name || '').toLowerCase().includes(search.toLowerCase()))
   )
 
   return (
@@ -56,7 +56,7 @@ export default function Exams() {
                       <span className="badge bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">{e.organization}</span>
                       {e.status && <span className={`badge ${e.status === 'Open' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'}`}>{e.status}</span>}
                     </div>
-                    <h3 className="font-semibold text-base">{e.title}</h3>
+                    <h3 className="font-semibold text-base">{e.title || e.exam_name}</h3>
                     {e.description && <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{e.description}</p>}
                     {e.last_date && <p className="text-xs text-red-500 mt-1">Last Date: {new Date(e.last_date).toLocaleDateString('en-IN')}</p>}
                   </div>

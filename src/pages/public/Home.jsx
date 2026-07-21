@@ -213,7 +213,7 @@ export default function Home() {
                 {exams.map(e => (
                   <li key={e.id} className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-sm font-medium">{e.title}</p>
+                      <p className="text-sm font-medium">{e.title || e.exam_name}</p>
                       <p className="text-xs text-gray-400">{e.organization}</p>
                     </div>
                     <span className="badge bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 whitespace-nowrap text-xs">
