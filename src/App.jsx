@@ -1,35 +1,39 @@
+import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './context/AuthContext'
 
-// Public pages
-import Home             from './pages/public/Home'
-import Notifications    from './pages/public/Notifications'
-import Exams            from './pages/public/Exams'
-import CurrentAffairs   from './pages/public/CurrentAffairs'
-import PreviousPapers   from './pages/public/PreviousPapers'
-import AboutUs          from './pages/public/AboutUs'
-import Contact          from './pages/public/Contact'
-import PrivacyPolicy    from './pages/public/PrivacyPolicy'
-import GeniusAI         from './pages/public/GeniusAI'
-import DailyQuiz        from './pages/public/DailyQuiz'
-import MockTests        from './pages/public/MockTests'
-import MockTestEngine   from './pages/public/MockTestEngine'
-import JobAlerts        from './pages/public/JobAlerts'
-import Login            from './pages/public/Login'
-import StudentDashboard from './pages/public/StudentDashboard'
-import AttemptHistory    from './pages/public/AttemptHistory'
-import Subscribe        from './pages/public/Subscribe'
+// ── Eager shell — required for first paint / most frequent unauthenticated
+//    navigation. Everything else is route-level code split below. ──────────
+import Home  from './pages/public/Home'
+import Login from './pages/public/Login'
 
-// Admin pages
-import AdminLogin          from './pages/admin/AdminLogin'
-import AdminDashboard      from './pages/admin/AdminDashboard'
-import AdminNotifications  from './pages/admin/AdminNotifications'
-import AdminExams          from './pages/admin/AdminExams'
-import AdminCurrentAffairs from './pages/admin/AdminCurrentAffairs'
-import AdminPapers         from './pages/admin/AdminPapers'
-import AdminQuestions      from './pages/admin/AdminQuestions'
-import AdminDrafts         from './pages/admin/AdminDrafts'
-import AdminAutomation     from './pages/admin/AdminAutomation'
+// ── Public pages (lazy) ──────────────────────────────────────────────────────
+const Notifications    = lazy(() => import('./pages/public/Notifications'))
+const Exams             = lazy(() => import('./pages/public/Exams'))
+const CurrentAffairs   = lazy(() => import('./pages/public/CurrentAffairs'))
+const PreviousPapers   = lazy(() => import('./pages/public/PreviousPapers'))
+const AboutUs           = lazy(() => import('./pages/public/AboutUs'))
+const Contact            = lazy(() => import('./pages/public/Contact'))
+const PrivacyPolicy     = lazy(() => import('./pages/public/PrivacyPolicy'))
+const GeniusAI          = lazy(() => import('./pages/public/GeniusAI'))
+const DailyQuiz         = lazy(() => import('./pages/public/DailyQuiz'))
+const MockTests         = lazy(() => import('./pages/public/MockTests'))
+const MockTestEngine    = lazy(() => import('./pages/public/MockTestEngine'))
+const JobAlerts         = lazy(() => import('./pages/public/JobAlerts'))
+const StudentDashboard  = lazy(() => import('./pages/public/StudentDashboard'))
+const AttemptHistory     = lazy(() => import('./pages/public/AttemptHistory'))
+const Subscribe         = lazy(() => import('./pages/public/Subscribe'))
+
+// ── Admin pages (lazy) — already gated behind AdminRoute's auth check ──────
+const AdminLogin          = lazy(() => import('./pages/admin/AdminLogin'))
+const AdminDashboard      = lazy(() => import('./pages/admin/AdminDashboard'))
+const AdminNotifications  = lazy(() => import('./pages/admin/AdminNotifications'))
+const AdminExams          = lazy(() => import('./pages/admin/AdminExams'))
+const AdminCurrentAffairs = lazy(() => import('./pages/admin/AdminCurrentAffairs'))
+const AdminPapers         = lazy(() => import('./pages/admin/AdminPapers'))
+const AdminQuestions      = lazy(() => import('./pages/admin/AdminQuestions'))
+const AdminDrafts         = lazy(() => import('./pages/admin/AdminDrafts'))
+const AdminAutomation     = lazy(() => import('./pages/admin/AdminAutomation'))
 
 // ── Loading spinner ────────────────────────────────────────────────────────────
 function Spinner() {
@@ -78,41 +82,43 @@ function NotFound() {
 
 export default function App() {
   return (
-    <Routes>
-      {/* ── Public routes ── */}
-      <Route path="/"               element={<Home />} />
-      <Route path="/notifications"  element={<Notifications />} />
-      <Route path="/exams"          element={<Exams />} />
-      <Route path="/current-affairs"element={<CurrentAffairs />} />
-      <Route path="/previous-papers"element={<PreviousPapers />} />
-      <Route path="/about"          element={<AboutUs />} />
-      <Route path="/contact"        element={<Contact />} />
-      <Route path="/privacy-policy" element={<PrivacyPolicy />} />
-      <Route path="/genius-ai"      element={<GeniusAI />} />
-      <Route path="/daily-quiz"     element={<DailyQuiz />} />
-      <Route path="/mock-tests"     element={<MockTests />} />
-      <Route path="/mock-test/start"element={<MockTestEngine />} />
-      <Route path="/job-alerts"     element={<JobAlerts />} />
-      <Route path="/login"          element={<Login />} />
-      <Route path="/subscribe"      element={<Subscribe />} />
+    <Suspense fallback={<Spinner />}>
+      <Routes>
+        {/* ── Public routes ── */}
+        <Route path="/"               element={<Home />} />
+        <Route path="/notifications"  element={<Notifications />} />
+        <Route path="/exams"          element={<Exams />} />
+        <Route path="/current-affairs"element={<CurrentAffairs />} />
+        <Route path="/previous-papers"element={<PreviousPapers />} />
+        <Route path="/about"          element={<AboutUs />} />
+        <Route path="/contact"        element={<Contact />} />
+        <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+        <Route path="/genius-ai"      element={<GeniusAI />} />
+        <Route path="/daily-quiz"     element={<DailyQuiz />} />
+        <Route path="/mock-tests"     element={<MockTests />} />
+        <Route path="/mock-test/start"element={<MockTestEngine />} />
+        <Route path="/job-alerts"     element={<JobAlerts />} />
+        <Route path="/login"          element={<Login />} />
+        <Route path="/subscribe"      element={<Subscribe />} />
 
-      {/* ── Student protected routes ── */}
-      <Route path="/dashboard" element={<AuthRoute><StudentDashboard /></AuthRoute>} />
-      <Route path="/attempts"  element={<AuthRoute><AttemptHistory /></AuthRoute>} />
+        {/* ── Student protected routes ── */}
+        <Route path="/dashboard" element={<AuthRoute><StudentDashboard /></AuthRoute>} />
+        <Route path="/attempts"  element={<AuthRoute><AttemptHistory /></AuthRoute>} />
 
-      {/* ── Admin routes — require is_admin = true ── */}
-      <Route path="/admin/login"           element={<AdminLogin />} />
-      <Route path="/admin"                 element={<AdminRoute><AdminDashboard /></AdminRoute>} />
-      <Route path="/admin/notifications"   element={<AdminRoute><AdminNotifications /></AdminRoute>} />
-      <Route path="/admin/exams"           element={<AdminRoute><AdminExams /></AdminRoute>} />
-      <Route path="/admin/current-affairs" element={<AdminRoute><AdminCurrentAffairs /></AdminRoute>} />
-      <Route path="/admin/papers"          element={<AdminRoute><AdminPapers /></AdminRoute>} />
-      <Route path="/admin/questions"       element={<AdminRoute><AdminQuestions /></AdminRoute>} />
-      <Route path="/admin/drafts"          element={<AdminRoute><AdminDrafts /></AdminRoute>} />
-      <Route path="/admin/automation"      element={<AdminRoute><AdminAutomation /></AdminRoute>} />
+        {/* ── Admin routes — require is_admin = true ── */}
+        <Route path="/admin/login"           element={<AdminLogin />} />
+        <Route path="/admin"                 element={<AdminRoute><AdminDashboard /></AdminRoute>} />
+        <Route path="/admin/notifications"   element={<AdminRoute><AdminNotifications /></AdminRoute>} />
+        <Route path="/admin/exams"           element={<AdminRoute><AdminExams /></AdminRoute>} />
+        <Route path="/admin/current-affairs" element={<AdminRoute><AdminCurrentAffairs /></AdminRoute>} />
+        <Route path="/admin/papers"          element={<AdminRoute><AdminPapers /></AdminRoute>} />
+        <Route path="/admin/questions"       element={<AdminRoute><AdminQuestions /></AdminRoute>} />
+        <Route path="/admin/drafts"          element={<AdminRoute><AdminDrafts /></AdminRoute>} />
+        <Route path="/admin/automation"      element={<AdminRoute><AdminAutomation /></AdminRoute>} />
 
-      {/* ── Fix #11: 404 catch-all ── */}
-      <Route path="*" element={<NotFound />} />
-    </Routes>
+        {/* ── Fix #11: 404 catch-all ── */}
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </Suspense>
   )
 }
