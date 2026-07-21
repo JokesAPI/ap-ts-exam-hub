@@ -4,12 +4,13 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "test": "npm run test:payments && npm run test:ai",
+    "test": "npm run test:payments && npm run test:ai && npm run test:admin",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "test:payments": "node --experimental-test-module-mocks tests/verify-payment.test.mjs && node --experimental-test-module-mocks tests/create-order.test.mjs",
-    "test:ai": "node --experimental-test-module-mocks tests/groq-chat.test.mjs"
+    "test:ai": "node --experimental-test-module-mocks tests/groq-chat.test.mjs",
+    "test:admin": "node --test tests/admin-exams-save.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",

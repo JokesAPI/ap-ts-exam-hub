@@ -39,7 +39,7 @@ export default function AdminExams() {
       // features (e.g. AdminQuestions filters on slug IS NOT NULL). Both are
       // derived from the same validated title so there's one source of truth.
       const slug = form.title.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
-      const insertPayload = { ...payload, exam_name: form.title.trim(), slug }
+      const insertPayload = { ...payload, exam_name: form.title.trim(), slug };
       ({ error: err } = await supabase.from('exams').insert([insertPayload]))
     }
     setSaving(false)
