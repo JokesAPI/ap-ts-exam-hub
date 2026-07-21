@@ -199,6 +199,16 @@ export default function AdminQuestions() {
     } catch (e) { toast.error('Invalid JSON: ' + e.message); return }
     if (rows.length === 0) { toast.error('No questions in array'); return }
 
+    // Phase 6.5A.3-pre: validate test_id against the real catalog, not just for
+    // presence. The insert below is a single statement, so one unknown test_id
+    // would otherwise reject every other valid row with a raw Postgres error
+    // that names no row. `tests` is already loaded for the Mock Test dropdown.
+    if (tests.length === 0) {
+      toast.error('Mock Test catalog has not loaded yet — reload the page and try again')
+      return
+    }
+    const validTestIds = new Set(tests.map(t => t.test_id))
+
     const payloads = []
     const errors = []
     for (const [i, r] of rows.entries()) {
@@ -206,8 +216,12 @@ export default function AdminQuestions() {
       // QA fix #1: test_id is NOT NULL in production -- validate it here with
       // a friendly message instead of letting the insert fail on a raw
       // Postgres constraint error.
-      if (!r.test_id || !String(r.test_id).trim()) {
+      const testId = r.test_id == null ? '' : String(r.test_id).trim()
+      if (!testId) {
         errors.push({ row: rowNum, reason: 'test_id is required (must match an existing Mock Test)' }); continue
+      }
+      if (!validTestIds.has(testId)) {
+        errors.push({ row: rowNum, reason: `unknown test_id "${testId}" — must match an existing Mock Test` }); continue
       }
       if (!r.question || !['A', 'B', 'C', 'D'].includes(r.correct_answer)) {
         errors.push({ row: rowNum, reason: 'missing question or invalid correct_answer' }); continue
@@ -217,6 +231,7 @@ export default function AdminQuestions() {
       }
       payloads.push(buildPayload({
         ...empty, ...r,
+        test_id: testId, // validated + trimmed above; also guards non-string values
         tags: Array.isArray(r.tags) ? r.tags.join(', ') : (r.tags || ''),
         status: r.status || 'draft', // imported questions default to DRAFT (never auto-published)
       }))
