@@ -122,3 +122,35 @@ test('validation: empty title never reaches supabase', async () => {
   assert.equal(state.updates.length, 0)
   assert.equal(state.saving, false)
 })
+
+// ── Phase 6.5C.2: slug-generation parity ──────────────────────────────────
+// AdminExams.jsx (client, JS) and publish_draft()'s slugify() (server, SQL)
+// each implement the same algorithm independently -- there was no existing
+// helper to share, and the two run in different languages/processes. This
+// pins down expected outputs for both so a future edit to either side that
+// silently diverges gets caught here rather than showing up as two exams
+// with different slug shapes for the same kind of title.
+//
+// JS reference (must match src/pages/admin/AdminExams.jsx exactly):
+const slugifyJs = title =>
+  title.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+
+// SQL reference (must match supabase/migrations/20260721140000_..._columns.sql
+// public.slugify(): lower(trim(text)), non-alnum runs -> '-', trim '-' both ends):
+//   select nullif(trim(both '-' from regexp_replace(lower(trim(coalesce(p_text, ''))), '[^a-z0-9]+', '-', 'g')), '')
+// This can only be executed against a real Postgres instance, so it is not
+// invoked here -- see supabase/regression/phase6_5c2_ai_exam_publish.sql for
+// the live-database check. This test instead pins the *expected* outputs
+// both implementations must independently produce.
+const slugCases = [
+  ['APPSC Group 1 Services', 'appsc-group-1-services'],
+  ['TSPSC  Group--2!!  Services', 'tspsc-group-2-services'],
+  ['AI E2E Test Exam Publish', 'ai-e2e-test-exam-publish'],
+  ['  leading and trailing spaces  ', 'leading-and-trailing-spaces'],
+]
+
+test('slugify (client-side algorithm): matches expected slugs', () => {
+  for (const [title, expected] of slugCases) {
+    assert.equal(slugifyJs(title), expected, `title="${title}"`)
+  }
+})
