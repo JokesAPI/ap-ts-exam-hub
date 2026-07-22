@@ -3,13 +3,17 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Helmet } from 'react-helmet-async'
 import Layout from '../../components/Layout'
 import { useAuth } from '../../context/AuthContext'
-import { Brain, FileText, BarChart2, Trophy, Clock, Star, LogOut, User, Zap, BookOpen, Crown } from 'lucide-react'
+import { Brain, FileText, BarChart2, Trophy, Clock, Star, LogOut, User, Zap, BookOpen, Crown, Target } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { loadSubjectStats } from '../../lib/attempts'
+import { loadTestCatalog, resolveAccess } from '../../lib/officialTests'
+import { getStudyGoal } from '../../lib/performance'
 import toast from 'react-hot-toast'
 
 export default function StudentDashboard() {
   const { user, profile, signOut, isPro } = useAuth()
   const [results, setResults] = useState([])
+  const [studyGoal, setStudyGoal] = useState(null)
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -23,12 +27,30 @@ export default function StudentDashboard() {
       .order('created_at', { ascending: false })
       .limit(5)
       .then(({ data }) => setResults(data || []))
+
+    // Today's Study Goal: weakest subject + a matching active test, if one
+    // exists. Silent, best-effort -- if either fetch fails or there's
+    // nothing real to recommend, the card simply doesn't render. No "no
+    // data" state, matching every other soft-failure in this effect.
+    Promise.all([loadSubjectStats(supabase, user.id), loadTestCatalog(supabase)])
+      .then(([subjectStatsList, testCatalog]) => setStudyGoal(getStudyGoal(subjectStatsList, testCatalog)))
+      .catch(() => setStudyGoal(null))
   }, [user])
 
   async function handleSignOut() {
     await signOut()
     toast.success('Signed out!')
     navigate('/')
+  }
+
+  // Same access resolution MockTests.jsx uses for every test start -- never
+  // bypasses public/free/premium gating just because this button lives on
+  // the dashboard instead of the test catalog.
+  function startRecommendedTest(test) {
+    const access = resolveAccess(test.access_tier, { user, isPro })
+    if (access === 'login')   { navigate('/login'); return }
+    if (access === 'upgrade') { navigate('/subscribe'); return }
+    navigate('/mock-test/start', { state: { testId: test.test_id, title: test.title } })
   }
 
   if (!user) return null
@@ -83,6 +105,27 @@ export default function StudentDashboard() {
               <Link to="/subscribe" className="bg-white text-purple-700 font-bold px-5 py-2 rounded-xl hover:bg-purple-50 transition-colors text-sm">
                 Upgrade Now
               </Link>
+            </div>
+          </div>
+        )}
+
+        {/* Today's Study Goal — only rendered when there's a real weak subject
+            AND a real active test to recommend for it. No empty/"no data" state. */}
+        {studyGoal && (
+          <div className="card p-5 mb-6 border-2 border-primary-200 dark:border-primary-800">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0">
+                  <Target className="h-5 w-5 text-primary-600" />
+                </div>
+                <div>
+                  <p className="font-bold">Today's Study Goal: {studyGoal.subject}</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-sm">Your accuracy here is {studyGoal.accuracy}% — practice to improve it</p>
+                </div>
+              </div>
+              <button onClick={() => startRecommendedTest(studyGoal.test)} className="btn-primary text-sm py-2 whitespace-nowrap">
+                Start Practice
+              </button>
             </div>
           </div>
         )}
