@@ -60,7 +60,7 @@ export default function MockTestEngine() {
   const testTitle = testMeta?.title || ''
 
   // ── PR-2: official tests load from Supabase only, gated by access_tier ────
-  useEffect(() => { loadQuestions() }, [testId, user, isPro])
+  useEffect(() => { loadQuestions() }, [testId, user?.id, isPro])
 
   useEffect(() => {
     if (phase !== 'test') return
