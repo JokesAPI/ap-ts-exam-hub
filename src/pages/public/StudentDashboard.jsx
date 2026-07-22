@@ -72,6 +72,26 @@ export default function StudentDashboard() {
 
   if (!user) return null
 
+  // Single source of truth for every dashboard action link -- both the
+  // Quick Actions grid below and the Mission Completed "Continue Learning"
+  // buttons render from this one array. ctaLabel/ctaOrder are only present
+  // on the four actions Continue Learning surfaces; entries without
+  // ctaOrder (Previous Papers, Job Alerts) are Quick-Actions-only.
+  const dashboardActions = [
+    { to: '/genius-ai', icon: Brain, label: 'Genius AI', desc: 'Ask doubts, get study plans', color: 'bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800', ctaLabel: 'Ask Genius AI', ctaOrder: 4 },
+    { to: '/mock-tests', icon: FileText, label: 'Mock Tests', desc: 'Practice with real questions', color: 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800', ctaLabel: 'Practice Another Mock Test', ctaOrder: 3 },
+    { to: '/daily-quiz', icon: Zap, label: 'Daily Quiz', desc: 'Today\'s 10 questions', color: 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800', ctaLabel: 'Take Today\'s Daily Quiz', ctaOrder: 1 },
+    { to: '/current-affairs', icon: BookOpen, label: 'Current Affairs', desc: 'Daily GK updates', color: 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800', ctaLabel: 'Read Today\'s Current Affairs', ctaOrder: 2 },
+    { to: '/previous-papers', icon: FileText, label: 'Previous Papers', desc: 'Download old papers', color: 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800' },
+    { to: '/job-alerts', icon: Trophy, label: 'Job Alerts', desc: 'Latest vacancies', color: 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800' },
+  ]
+
+  // Continue Learning shows only the 4 actions that carry a ctaOrder, in
+  // that order. Derived on every render -- no new state, no re-fetch.
+  const continueLearningActions = dashboardActions
+    .filter(a => a.ctaOrder)
+    .sort((a, b) => a.ctaOrder - b.ctaOrder)
+
   // Use the stored `percentage` column. Recomputing score/total discards the
   // negative marking (-1/3 per wrong answer) that the test engine applies when
   // the result is written, so the two values legitimately differ.
@@ -146,6 +166,22 @@ export default function StudentDashboard() {
                 <div className="h-2.5 rounded-full bg-green-500" style={{ width: '100%' }} />
               </div>
               <p className="text-xs text-gray-400 mt-1">Progress: 100%</p>
+
+              <div className="mt-5 pt-4 border-t border-green-200 dark:border-green-800">
+                <p className="font-semibold text-sm mb-3">Continue Learning</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {continueLearningActions.map((action, i) => (
+                    <Link
+                      key={action.to}
+                      to={action.to}
+                      className={`text-sm py-2 w-full justify-center ${i === 0 ? 'btn-primary' : 'btn-secondary'}`}
+                    >
+                      <action.icon className="h-4 w-4" />
+                      {action.ctaLabel}
+                    </Link>
+                  ))}
+                </div>
+              </div>
             </div>
           ) : (
             <div className="card p-5 mb-6 border-2 border-primary-200 dark:border-primary-800">
@@ -209,14 +245,7 @@ export default function StudentDashboard() {
         {/* Quick actions */}
         <h2 className="font-bold text-lg mb-4">Quick Actions</h2>
         <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-4 mb-8">
-          {[
-            { to: '/genius-ai', icon: Brain, label: 'Genius AI', desc: 'Ask doubts, get study plans', color: 'bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800' },
-            { to: '/mock-tests', icon: FileText, label: 'Mock Tests', desc: 'Practice with real questions', color: 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800' },
-            { to: '/daily-quiz', icon: Zap, label: 'Daily Quiz', desc: 'Today\'s 10 questions', color: 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' },
-            { to: '/current-affairs', icon: BookOpen, label: 'Current Affairs', desc: 'Daily GK updates', color: 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800' },
-            { to: '/previous-papers', icon: FileText, label: 'Previous Papers', desc: 'Download old papers', color: 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800' },
-            { to: '/job-alerts', icon: Trophy, label: 'Job Alerts', desc: 'Latest vacancies', color: 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800' },
-          ].map(({ to, icon: Icon, label, desc, color }) => (
+          {dashboardActions.map(({ to, icon: Icon, label, desc, color }) => (
             <Link key={to} to={to} className={`card p-4 border-2 ${color} hover:shadow-md transition-shadow`}>
               <Icon className="h-5 w-5 mb-2 text-gray-600 dark:text-gray-400" />
               <p className="font-semibold text-sm">{label}</p>
