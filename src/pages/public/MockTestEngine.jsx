@@ -108,7 +108,13 @@ export default function MockTestEngine() {
       const pool = await loadOfficialQuestions(supabase, testId)
       const shuffled = [...pool].sort(() => Math.random() - 0.5)
       setQuestions(shuffled)
-      setTimeLeft(shuffled.length * TEST_TIME_PER_Q)
+      // Phase 7.5A: duration_minutes is a nullable per-test override. NULL
+      // (every existing test today) preserves the exact legacy calculation.
+      setTimeLeft(
+        test.duration_minutes != null
+          ? test.duration_minutes * 60
+          : shuffled.length * TEST_TIME_PER_Q
+      )
       setPhase('test')
       startTime.current = Date.now()
       submitted.current = false
@@ -162,7 +168,11 @@ export default function MockTestEngine() {
       }
     })
 
-    const rawScore      = correct - wrong / 3
+    // Phase 7.5A: negative_mark_per_wrong is a nullable per-test override.
+    // NULL (every existing test today) preserves the exact legacy wrong/3
+    // formula (equivalent to a per-wrong deduction of 1/3).
+    const negativeMarkPerWrong = testMeta?.negative_mark_per_wrong ?? (1 / 3)
+    const rawScore      = correct - wrong * negativeMarkPerWrong
     const marksObtained = Math.round(rawScore * 100) / 100
     const maxMarks      = questions.length
     const percentage    = Math.max(0, Math.round((marksObtained / maxMarks) * 100))
@@ -223,6 +233,15 @@ export default function MockTestEngine() {
 
   const q        = questions[current]
   const answered = Object.keys(answers).length
+  // Phase 7.5A: keep this label in sync with the actual formula submitTest()
+  // will use, so a future per-test override never shows a stale "-1/3".
+  // Display only -- rounded to 2 decimals for readability; the real formula
+  // in submitTest() still uses the exact, unrounded metadata value.
+  const negativeMarkLabel = testMeta?.negative_mark_per_wrong == null
+    ? '-1/3 for wrong'
+    : testMeta.negative_mark_per_wrong === 0
+      ? 'No Negative Marking'
+      : `-${testMeta.negative_mark_per_wrong.toFixed(2)} for wrong`
 
   // ── PAYWALL SCREEN ────────────────────────────────────────────────────────
   // ── ACCESS GATE (tier-based, enforced server-side by RLS) ─────────────────
@@ -445,7 +464,7 @@ export default function MockTestEngine() {
         <div className="card p-4 mb-4 flex items-center justify-between flex-wrap gap-3">
           <div>
             <p className="font-bold">{testTitle}</p>
-            <p className="text-sm text-gray-500">{answered}/{questions.length} answered • -1/3 for wrong</p>
+            <p className="text-sm text-gray-500">{answered}/{questions.length} answered • {negativeMarkLabel}</p>
           </div>
           <div className={`flex items-center gap-2 font-bold text-lg px-4 py-2 rounded-xl ${timeWarning}`}>
             <Clock className="h-5 w-5" /> {formatTime(timeLeft)}

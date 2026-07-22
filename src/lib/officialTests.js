@@ -34,7 +34,10 @@ export function resolveAccess(tier, { user, isPro }) {
 export async function loadTestCatalog(supabase) {
   const { data, error } = await supabase
     .from('mock_tests')
-    .select('test_id, title, description, access_tier, subject, display_order')
+    // Phase 7.5A: duration_minutes / negative_mark_per_wrong are nullable
+    // per-test overrides. NULL on either means "not set" -- callers must
+    // fall back to the legacy hardcoded behaviour, never treat NULL as 0.
+    .select('test_id, title, description, access_tier, subject, display_order, duration_minutes, negative_mark_per_wrong')
     .eq('is_active', true)
     .order('display_order', { ascending: true })
 
@@ -46,7 +49,8 @@ export async function loadTestCatalog(supabase) {
 export async function loadTest(supabase, testId) {
   const { data, error } = await supabase
     .from('mock_tests')
-    .select('test_id, title, access_tier, subject')
+    // Phase 7.5A: same nullable-override columns as loadTestCatalog() above.
+    .select('test_id, title, access_tier, subject, duration_minutes, negative_mark_per_wrong')
     .eq('test_id', testId)
     .eq('is_active', true)
     .maybeSingle()
