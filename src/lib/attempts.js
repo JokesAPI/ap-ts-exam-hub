@@ -84,32 +84,38 @@ export function formatDuration(secs) {
 }
 
 /**
- * Every subject_stats blob from the signed-in student's own attempts, full
- * history (not paginated like loadAttemptPage -- a weak-subject calculation
- * needs the whole history, not one page of it).
+ * The signed-in student's own attempts, full history (not paginated like
+ * loadAttemptPage -- weak-subject calculation and mission-completion
+ * detection both need the whole history, not one page of it), reduced to
+ * just the columns those two calculations need.
  *
  * subject_stats is small: measured at ~95-101 bytes/row in production,
  * unlike `answers` (~2 KB/row, grows with question count). Fetching it in
  * full for one student, even across 100+ attempts, stays well under the
  * size that made `answers`/`subject_stats` worth excluding from
  * loadAttemptPage's LIST_COLUMNS in the first place -- that exclusion was
- * about `answers`, not this column.
+ * about `answers`, not this column. test_id and created_at are trivial by
+ * comparison.
  *
  * Same RLS boundary as every other query in this file: mock_results_select_own
  * restricts every row to auth.uid() = user_id regardless of this .eq() --
  * the filter here is a query-planner hint (matches idx_mock_results_user_id),
  * not the security boundary.
  *
- * @returns Array<Object> - one subject_stats blob per attempt that has one,
- *   shaped { [subject]: { correct, wrong, total } }
+ * One query, reused for both weak-subject aggregation (getWeakestSubject /
+ * getStudyGoal) and mission-completion detection (isCompletedToday) --
+ * deliberately not two separate queries against the same table.
+ *
+ * @returns Array<{ subject_stats: Object, test_id: string, created_at: string }>
+ *   one entry per attempt that has a subject_stats blob
  */
 export async function loadSubjectStats(supabase, userId) {
   const { data, error } = await supabase
     .from('mock_results')
-    .select('subject_stats')
+    .select('subject_stats, test_id, created_at')
     .eq('user_id', userId)
     .not('subject_stats', 'is', null)
 
   if (error) throw new Error(`Could not load subject performance: ${error.message}`)
-  return (data || []).map(row => row.subject_stats).filter(Boolean)
+  return (data || []).filter(row => row.subject_stats)
 }

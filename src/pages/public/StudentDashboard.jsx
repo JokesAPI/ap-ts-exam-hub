@@ -3,17 +3,19 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Helmet } from 'react-helmet-async'
 import Layout from '../../components/Layout'
 import { useAuth } from '../../context/AuthContext'
-import { Brain, FileText, BarChart2, Trophy, Clock, Star, LogOut, User, Zap, BookOpen, Crown, Target } from 'lucide-react'
+import { Brain, FileText, BarChart2, Trophy, Clock, Star, LogOut, User, Zap, BookOpen, Crown, Target, CheckCircle2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { loadSubjectStats } from '../../lib/attempts'
 import { loadTestCatalog, resolveAccess } from '../../lib/officialTests'
-import { getStudyGoal } from '../../lib/performance'
+import { getStudyGoal, isCompletedToday, getMissionDetails } from '../../lib/performance'
 import toast from 'react-hot-toast'
 
 export default function StudentDashboard() {
   const { user, profile, signOut, isPro } = useAuth()
   const [results, setResults] = useState([])
   const [studyGoal, setStudyGoal] = useState(null)
+  const [missionDetails, setMissionDetails] = useState(null)
+  const [missionCompleted, setMissionCompleted] = useState(false)
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -28,13 +30,28 @@ export default function StudentDashboard() {
       .limit(5)
       .then(({ data }) => setResults(data || []))
 
-    // Today's Study Goal: weakest subject + a matching active test, if one
-    // exists. Silent, best-effort -- if either fetch fails or there's
-    // nothing real to recommend, the card simply doesn't render. No "no
-    // data" state, matching every other soft-failure in this effect.
+    // Today's Mission: weakest subject + a matching active test, if one
+    // exists, plus whether it's already been completed today and (for the
+    // card's Estimated Time / Difficulty fields) that test's real published
+    // question metadata. Silent, best-effort -- if any fetch fails or
+    // there's nothing real to recommend, the card simply doesn't render.
+    // No "no data" state, matching every other soft-failure in this effect.
     Promise.all([loadSubjectStats(supabase, user.id), loadTestCatalog(supabase)])
-      .then(([subjectStatsList, testCatalog]) => setStudyGoal(getStudyGoal(subjectStatsList, testCatalog)))
-      .catch(() => setStudyGoal(null))
+      .then(async ([attempts, testCatalog]) => {
+        const goal = getStudyGoal(attempts, testCatalog)
+        setStudyGoal(goal)
+        if (!goal) { setMissionDetails(null); setMissionCompleted(false); return }
+
+        setMissionCompleted(isCompletedToday(attempts, goal.test.test_id))
+
+        const { data: questions } = await supabase
+          .from('mock_questions')
+          .select('difficulty')
+          .eq('test_id', goal.test.test_id)
+          .eq('status', 'published')
+        setMissionDetails(getMissionDetails(questions))
+      })
+      .catch(() => { setStudyGoal(null); setMissionDetails(null); setMissionCompleted(false) })
   }, [user])
 
   async function handleSignOut() {
@@ -109,25 +126,67 @@ export default function StudentDashboard() {
           </div>
         )}
 
-        {/* Today's Study Goal — only rendered when there's a real weak subject
-            AND a real active test to recommend for it. No empty/"no data" state. */}
+        {/* Today's Mission — only rendered when there's a real weak subject
+            AND a real active test to recommend for it. No empty/"no data"
+            state. Swaps to the completed state once a mock_results row
+            exists for this test today -- no separately-tracked flag. */}
         {studyGoal && (
-          <div className="card p-5 mb-6 border-2 border-primary-200 dark:border-primary-800">
-            <div className="flex items-center justify-between flex-wrap gap-3">
+          missionCompleted ? (
+            <div className="card p-5 mb-6 border-2 border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/10">
               <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-green-100 dark:bg-green-900/30 flex items-center justify-center flex-shrink-0">
+                  <CheckCircle2 className="h-5 w-5 text-green-600" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-bold">🎉 Mission Completed</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-sm">Great job! Come back tomorrow for your next mission.</p>
+                </div>
+              </div>
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 mt-4">
+                <div className="h-2.5 rounded-full bg-green-500" style={{ width: '100%' }} />
+              </div>
+              <p className="text-xs text-gray-400 mt-1">Progress: 100%</p>
+            </div>
+          ) : (
+            <div className="card p-5 mb-6 border-2 border-primary-200 dark:border-primary-800">
+              <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 rounded-xl bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0">
                   <Target className="h-5 w-5 text-primary-600" />
                 </div>
                 <div>
-                  <p className="font-bold">Today's Study Goal: {studyGoal.subject}</p>
-                  <p className="text-gray-500 dark:text-gray-400 text-sm">Your accuracy here is {studyGoal.accuracy}% — practice to improve it</p>
+                  <p className="font-bold">Today's Mission</p>
+                  <p className="text-gray-500 dark:text-gray-400 text-sm">{studyGoal.subject}</p>
                 </div>
               </div>
-              <button onClick={() => startRecommendedTest(studyGoal.test)} className="btn-primary text-sm py-2 whitespace-nowrap">
+
+              <div className="grid grid-cols-3 gap-3 mb-4 text-center">
+                <div>
+                  <Clock className="h-4 w-4 mx-auto mb-1 text-gray-400" />
+                  <p className="text-xs font-semibold">{missionDetails ? `${missionDetails.estimatedMinutes} min` : '—'}</p>
+                  <p className="text-[11px] text-gray-400">Est. Time</p>
+                </div>
+                <div>
+                  <BarChart2 className="h-4 w-4 mx-auto mb-1 text-gray-400" />
+                  <p className="text-xs font-semibold capitalize">{missionDetails ? missionDetails.difficulty : '—'}</p>
+                  <p className="text-[11px] text-gray-400">Difficulty</p>
+                </div>
+                <div>
+                  <Trophy className="h-4 w-4 mx-auto mb-1 text-gray-400" />
+                  <p className="text-xs font-semibold">+50 XP</p>
+                  <p className="text-[11px] text-gray-400">Reward</p>
+                </div>
+              </div>
+
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 mb-1">
+                <div className="h-2.5 rounded-full bg-primary-500" style={{ width: '0%' }} />
+              </div>
+              <p className="text-xs text-gray-400 mb-4">Progress: 0%</p>
+
+              <button onClick={() => startRecommendedTest(studyGoal.test)} className="btn-primary text-sm py-2 w-full sm:w-auto">
                 Start Practice
               </button>
             </div>
-          </div>
+          )
         )}
 
         {/* Stats */}
