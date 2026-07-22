@@ -98,7 +98,7 @@ export default function MockTests() {
     const access = resolveAccess(test.access_tier, { user, isPro })
     if (access === 'login')   { navigate('/login'); return }
     if (access === 'upgrade') { navigate('/subscribe'); return }
-    navigate('/mock-test/start', { state: { testId: test.test_id, title: test.title } })
+    navigate(`/mock-test/start?testId=${encodeURIComponent(test.test_id)}`)
   }
 
   // ── AI PRACTICE → generated on the fly. Never scored, never ranked, never

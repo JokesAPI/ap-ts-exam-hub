@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Helmet } from 'react-helmet-async'
-import { useNavigate, useLocation, Link } from 'react-router-dom'
+import { useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom'
 import Layout from '../../components/Layout'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
@@ -29,10 +29,14 @@ export default function MockTestEngine() {
   const { user, isPro } = useAuth()
   const { state }       = useLocation()
   const navigate        = useNavigate()
+  const [searchParams]  = useSearchParams()
 
-  const testId    = state?.testId    || 'appsc-gs-1'
-  const testTitle = state?.title     || 'APPSC Group-2 General Studies'
-  const student   = state?.student   || safeGet('student_info', {})
+  // testId's single canonical source is the URL query string -- no
+  // location.state fallback and no hardcoded default test. A missing or
+  // blank value is handled explicitly in loadQuestions() below, not by
+  // silently substituting a different test.
+  const testId  = (searchParams.get('testId') || '').trim()
+  const student = state?.student || safeGet('student_info', {})
 
   const [questions,      setQuestions]      = useState([])
   const [current,        setCurrent]        = useState(0)
@@ -49,6 +53,11 @@ export default function MockTestEngine() {
   const timerRef   = useRef(null)
   const startTime  = useRef(Date.now())
   const submitted  = useRef(false)
+
+  // Title comes only from the loaded test record (loadTest()) -- never
+  // trusted from navigation state, so a shared/bookmarked URL always shows
+  // the real title, and the result screen reflects the test that actually ran.
+  const testTitle = testMeta?.title || ''
 
   // ── PR-2: official tests load from Supabase only, gated by access_tier ────
   useEffect(() => { loadQuestions() }, [testId, user, isPro])
@@ -68,6 +77,14 @@ export default function MockTestEngine() {
     setPhase('loading')
     setErrorMsg('')
     try {
+      // No canonical test ID in the URL -- nothing to load. Fails safe
+      // instead of silently substituting a different test.
+      if (!testId) {
+        setErrorMsg('No test was selected.')
+        setPhase('error')
+        return
+      }
+
       // 1. Resolve the test and its tier.
       const test = await loadTest(supabase, testId)
       if (!test) {
@@ -257,7 +274,10 @@ export default function MockTestEngine() {
         <h2 className="text-xl font-bold">Failed to load questions</h2>
         <p className="text-gray-500 text-sm max-w-md">{errorMsg || 'Please check your internet connection and try again.'}</p>
         <p className="text-gray-400 text-xs">Official questions are served only from our reviewed question bank — we never substitute unverified content.</p>
-        <button onClick={loadQuestions} className="btn-primary">Try Again</button>
+        <div className="flex gap-3">
+          <button onClick={loadQuestions} className="btn-primary">Try Again</button>
+          <button onClick={() => navigate('/mock-tests')} className="btn-secondary">Back to Mock Tests</button>
+        </div>
       </div>
     </Layout>
   )
