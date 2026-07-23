@@ -4,6 +4,7 @@ import AdminLayout from '../../components/AdminLayout'
 import Modal from '../../components/Modal'
 import { supabase } from '../../lib/supabase'
 import toast from 'react-hot-toast'
+import { validateImportRows } from '../../lib/questionImport.js'
 
 const DIFFICULTIES = ['easy', 'medium', 'hard']
 const STATUSES = ['draft', 'in_review', 'approved', 'published', 'rejected', 'archived']
@@ -205,70 +206,50 @@ export default function AdminQuestions() {
     if (rows.length === 0) { toast.error('No questions in array'); return }
 
     // Phase 6.5A.3-pre: validate test_id against the real catalog, not just for
-    // presence. The insert below is a single statement, so one unknown test_id
-    // would otherwise reject every other valid row with a raw Postgres error
-    // that names no row. `tests` is already loaded for the Mock Test dropdown.
+    // presence. `tests` is already loaded for the Mock Test dropdown.
     if (tests.length === 0) {
       toast.error('Mock Test catalog has not loaded yet — reload the page and try again')
       return
     }
     const validTestIds = new Set(tests.map(t => t.test_id))
 
-    const payloads = []
-    const errors = []
-    for (const [i, r] of rows.entries()) {
-      const rowNum = i + 1
-      // QA fix #1: test_id is NOT NULL in production -- validate it here with
-      // a friendly message instead of letting the insert fail on a raw
-      // Postgres constraint error.
-      // Phase 8.0: accept mock_test_assignment as a fallback when test_id is
-      // absent -- test_id always wins if both are present, so every existing
-      // import (which only ever sends test_id) is completely unaffected.
-      const testIdSource = r.test_id ?? r.mock_test_assignment
-      const testId = testIdSource == null ? '' : String(testIdSource).trim()
-      if (!testId) {
-        errors.push({ row: rowNum, reason: 'test_id is required (must match an existing Mock Test)' }); continue
-      }
-      if (!validTestIds.has(testId)) {
-        errors.push({ row: rowNum, reason: `unknown test_id "${testId}" — must match an existing Mock Test` }); continue
-      }
-      if (!r.question || !['A', 'B', 'C', 'D'].includes(r.correct_answer)) {
-        errors.push({ row: rowNum, reason: 'missing question or invalid correct_answer' }); continue
-      }
-      if (!r.option_a || !r.option_b || !r.option_c || !r.option_d) {
-        errors.push({ row: rowNum, reason: 'all four options (option_a-option_d) are required' }); continue
-      }
-      payloads.push(buildPayload({
-        ...empty, ...r,
-        test_id: testId, // validated + trimmed above; also guards non-string values
-        tags: Array.isArray(r.tags) ? r.tags.join(', ') : (r.tags || ''),
-        status: r.status || 'draft', // imported questions default to DRAFT (never auto-published)
-        // Phase 8.0: `{...empty, ...r}` above inherits empty.difficulty ('medium')
-        // whenever a row omits the field, silently mislabeling difficulty-less
-        // content. Force it from `r` alone so absent/blank both mean "no
-        // difficulty", never a default.
-        difficulty: r.difficulty || null,
-      }))
-    }
+    // Phase 8.1: resolution (test_id -> mock_test_assignment -> subject map)
+    // and structural validation both live in src/lib/questionImport.js --
+    // the same functions this behavior is tested against, not a copy.
+    const { rows: normalizedRows, errors } = validateImportRows(rows, validTestIds)
 
-    if (payloads.length === 0) {
-      setImportResult({ imported: 0, skipped: errors.length, errors })
-      toast.error('No valid rows to import — see details below')
+    if (errors.length > 0) {
+      // Phase 8.1: the whole batch is all-or-nothing. ANY row error rejects
+      // every row, including ones that individually passed -- an Enterprise
+      // QuestionBank batch must never partially land in production. Nothing
+      // is inserted, importText is left untouched so the pasted content can
+      // be corrected in place rather than re-pasted from scratch.
+      //
+      // This is a deliberate behavior change from the previous "skip bad
+      // rows, import the rest" approach: a batch that used to partially
+      // succeed (e.g. 48 good rows + 2 typos) now imports zero rows until
+      // every row is fixed. See the Phase 8.1 patch notes for the full
+      // rationale -- this trades a modest workflow inconvenience for a
+      // guarantee that no batch is ever incomplete in production.
+      setImportResult({ imported: 0, skipped: rows.length, errors })
+      toast.error(`Import rejected — ${errors.length} of ${rows.length} row(s) failed validation. Nothing was written; fix and re-import.`)
       return
     }
+
+    const payloads = normalizedRows.map(r => buildPayload({ ...empty, ...r }))
 
     setImporting(true)
     const { error } = await supabase.from('mock_questions').insert(payloads)
     setImporting(false)
     if (error) {
       // A single insert() call is one statement -- on failure none of the
-      // otherwise-valid rows were written. Reported as one entry rather than
-      // guessing which row triggered it.
+      // rows were written. Reported as one entry rather than guessing which
+      // row triggered it.
       setImportResult({ imported: 0, skipped: rows.length, errors: [{ row: '-', reason: error.message }] })
       toast.error('Import failed — see details below')
       return
     }
-    setImportResult({ imported: payloads.length, skipped: errors.length, errors })
+    setImportResult({ imported: payloads.length, skipped: 0, errors: [] })
     toast.success(`Imported ${payloads.length} of ${rows.length} questions as drafts`)
     setImportText(''); load()
   }
@@ -512,15 +493,18 @@ export default function AdminQuestions() {
         <div className="space-y-3">
           <p className="text-sm text-gray-500">
             Paste a JSON array. Each object needs <code>question</code>, <code>correct_answer</code> (A/B/C/D),
-            option_a-d, and <b className="text-gray-700 dark:text-gray-300">test_id (REQUIRED — must match an existing Mock Test's ID)</b>.
-            Optional: explanation, subject, topic, subtopic, difficulty, source, source_year, tags.
+            option_a-d, and either <b className="text-gray-700 dark:text-gray-300">test_id</b> (must match an existing Mock Test's ID)
+            or a <b className="text-gray-700 dark:text-gray-300">subject</b> that resolves via the centralized subject map.
+            Optional: explanation, topic, subtopic, source, source_year, tags.
+            <b> Any difficulty value is ignored</b> -- imported questions never carry easy/medium/hard.
             <b> All imported questions enter as drafts</b> -- never auto-published.
+            <b> All-or-nothing:</b> if any row fails validation, nothing in the batch is imported.
           </p>
           <label className="btn-secondary text-sm cursor-pointer inline-flex w-fit">
             <FileSpreadsheet className="h-4 w-4" /> Load CSV file
             <input type="file" accept=".csv,text/csv" className="hidden" onChange={onCsvFile} />
           </label>
-          <textarea className="input font-mono text-xs" rows={10} placeholder='[{"test_id":"indian-polity","question":"...","option_a":"...","option_b":"...","option_c":"...","option_d":"...","correct_answer":"A","subject":"Indian Polity","difficulty":"medium"}]'
+          <textarea className="input font-mono text-xs" rows={10} placeholder='[{"subject":"Indian Polity","question":"...","option_a":"...","option_b":"...","option_c":"...","option_d":"...","correct_answer":"A"}]'
             value={importText} onChange={e => setImportText(e.target.value)} />
           <button onClick={bulkImport} disabled={importing} className="btn-primary w-full justify-center">
             {importing ? 'Importing...' : 'Import as Drafts'}
