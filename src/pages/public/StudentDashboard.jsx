@@ -195,23 +195,37 @@ export default function StudentDashboard() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3 mb-4 text-center">
-                <div>
-                  <Clock className="h-4 w-4 mx-auto mb-1 text-gray-400" />
-                  <p className="text-xs font-semibold">{missionDetails ? `${missionDetails.estimatedMinutes} min` : '—'}</p>
-                  <p className="text-[11px] text-gray-400">Est. Time</p>
-                </div>
-                <div>
-                  <BarChart2 className="h-4 w-4 mx-auto mb-1 text-gray-400" />
-                  <p className="text-xs font-semibold capitalize">{missionDetails ? missionDetails.difficulty : '—'}</p>
-                  <p className="text-[11px] text-gray-400">Difficulty</p>
-                </div>
-                <div>
-                  <Trophy className="h-4 w-4 mx-auto mb-1 text-gray-400" />
-                  <p className="text-xs font-semibold">+50 XP</p>
-                  <p className="text-[11px] text-gray-400">Reward</p>
-                </div>
-              </div>
+              {/* Difficulty is only ever present on missionDetails when Phase
+                  8.2's getMissionDetails() found complete difficulty coverage
+                  for the recommended test. Explicit boolean check -- the
+                  entire metric cell (icon + value + label) must disappear
+                  when it's not, not render blank via a truthy/falsy fallback
+                  string. Grid column count switches 3 <-> 2 so Est. Time and
+                  Reward stay evenly spaced either way. */}
+              {(() => {
+                const hasDifficulty = Boolean(missionDetails && missionDetails.difficulty)
+                return (
+                  <div className={`grid ${hasDifficulty ? 'grid-cols-3' : 'grid-cols-2'} gap-3 mb-4 text-center`}>
+                    <div>
+                      <Clock className="h-4 w-4 mx-auto mb-1 text-gray-400" />
+                      <p className="text-xs font-semibold">{missionDetails ? `${missionDetails.estimatedMinutes} min` : '—'}</p>
+                      <p className="text-[11px] text-gray-400">Est. Time</p>
+                    </div>
+                    {hasDifficulty && (
+                      <div>
+                        <BarChart2 className="h-4 w-4 mx-auto mb-1 text-gray-400" />
+                        <p className="text-xs font-semibold capitalize">{missionDetails.difficulty}</p>
+                        <p className="text-[11px] text-gray-400">Difficulty</p>
+                      </div>
+                    )}
+                    <div>
+                      <Trophy className="h-4 w-4 mx-auto mb-1 text-gray-400" />
+                      <p className="text-xs font-semibold">+50 XP</p>
+                      <p className="text-[11px] text-gray-400">Reward</p>
+                    </div>
+                  </div>
+                )
+              })()}
 
               <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 mb-1">
                 <div className="h-2.5 rounded-full bg-primary-500" style={{ width: '0%' }} />
