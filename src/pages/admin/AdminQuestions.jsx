@@ -152,6 +152,11 @@ export default function AdminQuestions() {
       source_year: f.source_year ? Number(f.source_year) : null,
       tags: f.tags ? f.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
       status: f.status || 'draft',
+      // Phase 8.0: preserve an incoming question_id (e.g. from QuestionBank
+      // batches) inside the existing metadata jsonb column -- no schema
+      // change, and `undefined` here is dropped before the request body is
+      // built, so rows/forms with no question_id behave exactly as before.
+      metadata: f.question_id ? { question_id: f.question_id } : undefined,
     }
   }
 
@@ -216,7 +221,11 @@ export default function AdminQuestions() {
       // QA fix #1: test_id is NOT NULL in production -- validate it here with
       // a friendly message instead of letting the insert fail on a raw
       // Postgres constraint error.
-      const testId = r.test_id == null ? '' : String(r.test_id).trim()
+      // Phase 8.0: accept mock_test_assignment as a fallback when test_id is
+      // absent -- test_id always wins if both are present, so every existing
+      // import (which only ever sends test_id) is completely unaffected.
+      const testIdSource = r.test_id ?? r.mock_test_assignment
+      const testId = testIdSource == null ? '' : String(testIdSource).trim()
       if (!testId) {
         errors.push({ row: rowNum, reason: 'test_id is required (must match an existing Mock Test)' }); continue
       }
@@ -234,6 +243,11 @@ export default function AdminQuestions() {
         test_id: testId, // validated + trimmed above; also guards non-string values
         tags: Array.isArray(r.tags) ? r.tags.join(', ') : (r.tags || ''),
         status: r.status || 'draft', // imported questions default to DRAFT (never auto-published)
+        // Phase 8.0: `{...empty, ...r}` above inherits empty.difficulty ('medium')
+        // whenever a row omits the field, silently mislabeling difficulty-less
+        // content. Force it from `r` alone so absent/blank both mean "no
+        // difficulty", never a default.
+        difficulty: r.difficulty || null,
       }))
     }
 
