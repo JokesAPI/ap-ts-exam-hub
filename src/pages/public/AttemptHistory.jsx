@@ -148,8 +148,8 @@ export default function AttemptHistory() {
                   <tr>
                     <th className="px-4 py-3 text-left font-semibold">Test</th>
                     <th className="px-4 py-3 text-left font-semibold hidden lg:table-cell">Exam</th>
-                    <th className="px-4 py-3 text-left font-semibold">Score</th>
-                    <th className="px-4 py-3 text-left font-semibold">Percentage</th>
+                    <th className="px-4 py-3 text-left font-semibold">Correct</th>
+                    <th className="px-4 py-3 text-left font-semibold" title="Net Score includes negative marking.">Net Score</th>
                     <th className="px-4 py-3 text-left font-semibold hidden sm:table-cell">Time</th>
                     <th className="px-4 py-3 text-left font-semibold hidden md:table-cell">Date</th>
                   </tr>

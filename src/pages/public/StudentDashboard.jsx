@@ -283,9 +283,17 @@ export default function StudentDashboard() {
                   <tr key={r.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
                     <td className="px-4 py-3 font-medium">{r.test_title || r.test_id}</td>
                     <td className="px-4 py-3">
-                      <span className={`badge ${typeof r.percentage !== 'number' ? 'bg-gray-100 text-gray-600' : r.percentage >= 80 ? 'bg-green-100 text-green-700' : r.percentage >= 60 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
-                        {r.score}/{r.total}{typeof r.percentage === 'number' ? ` (${r.percentage}%)` : ''}
-                      </span>
+                      <div className="flex flex-col gap-1">
+                        <span className="text-gray-600 dark:text-gray-300">Correct: {r.score}/{r.total}</span>
+                        {typeof r.percentage === 'number' && (
+                          <span
+                            title="Net Score includes negative marking."
+                            className={`badge w-fit ${r.percentage >= 80 ? 'bg-green-100 text-green-700' : r.percentage >= 60 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}
+                          >
+                            Net Score: {r.percentage}%
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 hidden md:table-cell text-gray-500">{r.time_taken}s</td>
                     <td className="px-4 py-3 hidden md:table-cell text-gray-500">{new Date(r.created_at).toLocaleDateString('en-IN')}</td>
