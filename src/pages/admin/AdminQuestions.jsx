@@ -216,9 +216,53 @@ export default function AdminQuestions() {
     // Phase 8.1: resolution (test_id -> mock_test_assignment -> subject map)
     // and structural validation both live in src/lib/questionImport.js --
     // the same functions this behavior is tested against, not a copy.
-    const { rows: normalizedRows, errors } = validateImportRows(rows, validTestIds)
+    //
+    // Phase 8.3 Step 3: three passes.
+    //
+    // Pass A -- local validation only (no DB round-trip yet). Catches
+    // routing errors, required-field errors, and Tier A duplicates WITHIN
+    // this batch (validateImportRows's third argument defaults to {}, so
+    // no existing-DB question can match here -- only batch-internal repeats
+    // can).
+    const initialValidation = validateImportRows(rows, validTestIds)
+    if (initialValidation.errors.length > 0) {
+      setImportResult({ imported: 0, skipped: rows.length, errors: initialValidation.errors })
+      toast.error(`Import rejected — ${initialValidation.errors.length} of ${rows.length} row(s) failed validation. Nothing was written; fix and re-import.`)
+      return
+    }
 
-    if (errors.length > 0) {
+    // Pass B -- fetch existing questions for every distinct resolved
+    // test_id in this batch, in exactly one query, to check Tier A
+    // duplicates against real DB state. Minimal columns only -- this is a
+    // duplicate check, not a data preview.
+    const distinctTestIds = [...new Set(initialValidation.rows.map(row => row.test_id))]
+    const { data: existingQuestions, error: existingQuestionsError } = await supabase
+      .from('mock_questions')
+      .select('id, test_id, question, status')
+      .in('test_id', distinctTestIds)
+
+    if (existingQuestionsError) {
+      // Fail closed, same as load()'s error handling: if duplicate state
+      // can't be verified, the import must not proceed unchecked.
+      setImportResult({ imported: 0, skipped: rows.length, errors: [{ row: '-', reason: existingQuestionsError.message }] })
+      toast.error('Could not verify duplicate questions. Import was cancelled.')
+      return
+    }
+
+    const existingQuestionsByTestId = Object.create(null)
+    for (const question of existingQuestions || []) {
+      if (!existingQuestionsByTestId[question.test_id]) {
+        existingQuestionsByTestId[question.test_id] = []
+      }
+      existingQuestionsByTestId[question.test_id].push(question)
+    }
+
+    // Pass C -- final validation, now duplicate-aware against real DB
+    // state. Re-runs the same routing/shape checks (cheap, pure) plus
+    // Tier A duplicate detection against both the DB and the batch.
+    const finalValidation = validateImportRows(rows, validTestIds, existingQuestionsByTestId)
+
+    if (finalValidation.errors.length > 0) {
       // Phase 8.1: the whole batch is all-or-nothing. ANY row error rejects
       // every row, including ones that individually passed -- an Enterprise
       // QuestionBank batch must never partially land in production. Nothing
@@ -230,13 +274,14 @@ export default function AdminQuestions() {
       // succeed (e.g. 48 good rows + 2 typos) now imports zero rows until
       // every row is fixed. See the Phase 8.1 patch notes for the full
       // rationale -- this trades a modest workflow inconvenience for a
-      // guarantee that no batch is ever incomplete in production.
-      setImportResult({ imported: 0, skipped: rows.length, errors })
-      toast.error(`Import rejected — ${errors.length} of ${rows.length} row(s) failed validation. Nothing was written; fix and re-import.`)
+      // guarantee that no batch is ever incomplete in production. Phase 8.3
+      // extends the same guarantee to duplicate questions.
+      setImportResult({ imported: 0, skipped: rows.length, errors: finalValidation.errors })
+      toast.error(`Import rejected — ${finalValidation.errors.length} of ${rows.length} row(s) failed validation. Nothing was written; fix and re-import.`)
       return
     }
 
-    const payloads = normalizedRows.map(r => buildPayload({ ...empty, ...r }))
+    const payloads = finalValidation.rows.map(r => buildPayload({ ...empty, ...r }))
 
     setImporting(true)
     const { error } = await supabase.from('mock_questions').insert(payloads)
