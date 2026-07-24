@@ -5,6 +5,7 @@ import Modal from '../../components/Modal'
 import { supabase } from '../../lib/supabase'
 import toast from 'react-hot-toast'
 import { validateImportRows } from '../../lib/questionImport.js'
+import { evaluateQuestionSaveDuplicates } from '../../lib/adminQuestionValidation.js'
 
 const DIFFICULTIES = ['easy', 'medium', 'hard']
 const STATUSES = ['draft', 'in_review', 'approved', 'published', 'rejected', 'archived']
@@ -168,16 +169,85 @@ export default function AdminQuestions() {
     if (!form.option_a?.trim() || !form.option_b?.trim() || !form.option_c?.trim() || !form.option_d?.trim()) {
       toast.error('All four options (A-D) are required'); return
     }
+
+    // Phase 8.3 Step 4: double-submit guard. Required-field checks above are
+    // synchronous and don't need it; everything from here on awaits.
+    if (saving) return
     setSaving(true)
-    const payload = buildPayload(form)
-    if (payload.status === 'published' && !editing) payload.published_at = new Date().toISOString()
-    let err
-    if (editing) ({ error: err } = await supabase.from('mock_questions').update(payload).eq('id', editing))
-    else ({ error: err } = await supabase.from('mock_questions').insert([payload]))
-    setSaving(false)
-    if (err) { toast.error(err.message); return }
-    toast.success(editing ? 'Question updated' : 'Question added')
-    setModal(false); load()
+
+    // try/finally so `saving` is restored on every exit path -- including
+    // every early `return` below -- without setting it false before the
+    // final insert/update has actually completed on the success path.
+    try {
+      // Tier A: fetch existing questions scoped to the exact selected
+      // test_id. Minimal columns only, same as Bulk Import's Pass B.
+      const { data: existingQuestions, error: existingQuestionsError } = await supabase
+        .from('mock_questions')
+        .select('id, test_id, question, status')
+        .eq('test_id', form.test_id)
+
+      if (existingQuestionsError) {
+        toast.error('Could not verify duplicate questions. Save was cancelled.')
+        return
+      }
+
+      // Create has no id yet (editing is null); Edit's id is the
+      // authoritative self-exclusion value for both Tier A and Tier B.
+      const editingId = editing || undefined
+
+      const tierACheck = evaluateQuestionSaveDuplicates({
+        question: form.question,
+        editingId,
+        existingQuestions: existingQuestions || [],
+        nearDuplicateRpcRows: [],
+      })
+
+      if (tierACheck.tierAConflict) {
+        toast.error('An exact duplicate question already exists in this test.')
+        return
+      }
+
+      // Tier B: only after Tier A passes.
+      const { data: nearDuplicateRpcRows, error: nearDuplicateError } = await supabase.rpc(
+        'find_near_duplicate_questions',
+        { p_test_id: form.test_id, p_questions: [form.question], p_threshold: 0.45 }
+      )
+
+      if (nearDuplicateError) {
+        toast.error('Could not verify near-duplicate questions. Save was cancelled.')
+        return
+      }
+
+      const { tierBWarnings } = evaluateQuestionSaveDuplicates({
+        question: form.question,
+        editingId,
+        existingQuestions: existingQuestions || [],
+        nearDuplicateRpcRows: nearDuplicateRpcRows || [],
+      })
+
+      if (tierBWarnings.length > 0) {
+        // Already ordered by descending similarity -- [0] is the closest
+        // match. The rounded percentage is display-only, never stored.
+        const closest = tierBWarnings[0]
+        const displayPercent = Math.round(closest.similarity * 100)
+        const proceed = confirm(
+          `This question looks similar to an existing one (${displayPercent}% match):\n\n"${closest.matchedQuestion}"\n\nSave anyway?`
+        )
+        if (!proceed) return
+      }
+
+      // Existing insert/update path -- payload construction unchanged.
+      const payload = buildPayload(form)
+      if (payload.status === 'published' && !editing) payload.published_at = new Date().toISOString()
+      let err
+      if (editing) ({ error: err } = await supabase.from('mock_questions').update(payload).eq('id', editing))
+      else ({ error: err } = await supabase.from('mock_questions').insert([payload]))
+      if (err) { toast.error(err.message); return }
+      toast.success(editing ? 'Question updated' : 'Question added')
+      setModal(false); load()
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function remove(id) {
