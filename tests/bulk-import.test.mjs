@@ -391,7 +391,7 @@ test('validateImportRows: a duplicate error never includes the complete existing
 // AdminQuestions.jsx itself is a React component and isn't directly
 // unit-testable in this test architecture (same limitation already noted
 // at the top of this file for buildPayload()), so these tests instead
-// exercise the real exported validateImportRows() -> 
+// exercise the real exported validateImportRows() ->
 // getExistingQuestionsForTestId() path with a lookup object built exactly
 // the way the fixed production code builds it, proving the actual code
 // that consumes this lookup handles these keys safely end to end -- no
