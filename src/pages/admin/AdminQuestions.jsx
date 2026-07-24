@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase'
 import toast from 'react-hot-toast'
 import { validateImportRows } from '../../lib/questionImport.js'
 import { evaluateQuestionSaveDuplicates } from '../../lib/adminQuestionValidation.js'
+import { evaluatePublishConflicts } from '../../lib/adminQuestionPublishValidation.js'
 
 const DIFFICULTIES = ['easy', 'medium', 'hard']
 const STATUSES = ['draft', 'in_review', 'approved', 'published', 'rejected', 'archived']
@@ -411,9 +412,70 @@ export default function AdminQuestions() {
   }
   async function bulkSetStatus(status) {
     if (selected.size === 0) return
-    const patch = { status }
-    if (status === 'published') patch.published_at = new Date().toISOString()
-    const { error } = await supabase.from('mock_questions').update(patch).in('id', [...selected])
+
+    // Phase 8.3 Step 5: only publishing gets duplicate validation.
+    // draft/approved/rejected/archived keep the exact prior behavior --
+    // no extra fetch, no duplicate query.
+    if (status !== 'published') {
+      const patch = { status }
+      const { error } = await supabase.from('mock_questions').update(patch).in('id', [...selected])
+      if (error) { toast.error(error.message); return }
+      toast.success(`${selected.size} question(s) -> ${status}`)
+      load()
+      return
+    }
+
+    const selectedIds = [...selected]
+
+    // Step B: fetch every selected row directly from the DB by id -- never
+    // rely on `items` (the current page's cache), since selection could in
+    // principle include ids beyond what's currently rendered.
+    const { data: selectedQuestions, error: selectedQuestionsError } = await supabase
+      .from('mock_questions')
+      .select('id, test_id, question, status')
+      .in('id', selectedIds)
+
+    if (selectedQuestionsError) {
+      toast.error('Could not verify the selected questions. Publish was cancelled.')
+      return
+    }
+
+    if (!selectedQuestions || selectedQuestions.length !== selectedIds.length) {
+      toast.error('Some selected questions could not be found. Publish was cancelled.')
+      return
+    }
+
+    // Step C: fetch already-published rows for every distinct test_id in
+    // the selection, in exactly one query.
+    const distinctTestIds = [...new Set(selectedQuestions.map(q => q.test_id))]
+    const { data: publishedQuestions, error: publishedQuestionsError } = await supabase
+      .from('mock_questions')
+      .select('id, test_id, question, status')
+      .in('test_id', distinctTestIds)
+      .eq('status', 'published')
+
+    if (publishedQuestionsError) {
+      toast.error('Could not verify published duplicates. Publish was cancelled.')
+      return
+    }
+
+    const publishedQuestionsByTestId = Object.create(null)
+    for (const q of publishedQuestions || []) {
+      if (!publishedQuestionsByTestId[q.test_id]) publishedQuestionsByTestId[q.test_id] = []
+      publishedQuestionsByTestId[q.test_id].push(q)
+    }
+
+    // Step D: Tier A conflict check -- all-or-nothing, same guarantee as
+    // Bulk Import and Manual Create/Edit. Tier B is never consulted here.
+    const conflicts = evaluatePublishConflicts({ selectedQuestions, publishedQuestionsByTestId })
+    if (conflicts.length > 0) {
+      toast.error('One or more selected questions duplicate existing published questions. Nothing was published.')
+      return
+    }
+
+    // Step E: existing bulk update, unchanged.
+    const patch = { status, published_at: new Date().toISOString() }
+    const { error } = await supabase.from('mock_questions').update(patch).in('id', selectedIds)
     if (error) { toast.error(error.message); return }
     toast.success(`${selected.size} question(s) -> ${status}`)
     load()
