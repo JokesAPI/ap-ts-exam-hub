@@ -159,7 +159,7 @@ export default function AdminQuestions() {
       // batches) inside the existing metadata jsonb column -- no schema
       // change, and `undefined` here is dropped before the request body is
       // built, so rows/forms with no question_id behave exactly as before.
-      metadata: f.question_id ? { question_id: f.question_id } : undefined,
+     metadata: f.question_id ? { question_id: f.question_id } : {},
     }
   }
 
