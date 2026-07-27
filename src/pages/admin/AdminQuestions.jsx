@@ -157,9 +157,10 @@ export default function AdminQuestions() {
       status: f.status || 'draft',
       // Phase 8.0: preserve an incoming question_id (e.g. from QuestionBank
       // batches) inside the existing metadata jsonb column -- no schema
-      // change, and `undefined` here is dropped before the request body is
-      // built, so rows/forms with no question_id behave exactly as before.
-     metadata: f.question_id ? { question_id: f.question_id } : {},
+      // change. metadata is jsonb NOT NULL (default '{}'::jsonb, no DB
+      // trigger backing it up), so this always resolves to a real object
+      // -- never undefined, never null.
+      metadata: f.question_id ? { question_id: f.question_id } : {},
     }
   }
 

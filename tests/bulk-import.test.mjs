@@ -55,7 +55,7 @@ function buildPayload(f) {
     source_year: f.source_year ? Number(f.source_year) : null,
     tags: f.tags ? f.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
     status: f.status || 'draft',
-    metadata: f.question_id ? { question_id: f.question_id } : undefined,
+    metadata: f.question_id ? { question_id: f.question_id } : {},
   }
 }
 const empty = {
@@ -215,6 +215,23 @@ test('question_id is preserved into metadata.question_id end to end', () => {
   assert.equal(errors.length, 0)
   const payload = buildPayload({ ...empty, ...normalized[0] })
   assert.deepEqual(payload.metadata, { question_id: 'POL-CONS-001-Q01' })
+})
+
+// ── metadata hardening: mock_questions.metadata is NOT NULL (default
+// '{}'::jsonb, no DB trigger to fall back on), so buildPayload() must
+// never itself produce undefined or null here.
+test('buildPayload metadata: without question_id, resolves to {} (never undefined, never null)', () => {
+  const payload = buildPayload({ ...empty, question_id: undefined })
+  assert.deepEqual(payload.metadata, {})
+  assert.notStrictEqual(payload.metadata, undefined)
+  assert.notStrictEqual(payload.metadata, null)
+})
+
+test('buildPayload metadata: with question_id, resolves to { question_id } (never undefined, never null)', () => {
+  const payload = buildPayload({ ...empty, question_id: 'POL-CONS-001-Q01' })
+  assert.deepEqual(payload.metadata, { question_id: 'POL-CONS-001-Q01' })
+  assert.notStrictEqual(payload.metadata, undefined)
+  assert.notStrictEqual(payload.metadata, null)
 })
 
 test('a corrected POL-CONS-001-shaped row (subject-routed, lowercase status, no difficulty) imports cleanly end to end', () => {
