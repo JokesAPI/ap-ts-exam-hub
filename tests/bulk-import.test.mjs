@@ -55,7 +55,7 @@ function buildPayload(f) {
     source_year: f.source_year ? Number(f.source_year) : null,
     tags: f.tags ? f.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
     status: f.status || 'draft',
-    metadata: f.question_id ? { question_id: f.question_id } : undefined,
+    metadata: f.question_id ? { question_id: f.question_id } : {},
   }
 }
 const empty = {
@@ -217,6 +217,23 @@ test('question_id is preserved into metadata.question_id end to end', () => {
   assert.deepEqual(payload.metadata, { question_id: 'POL-CONS-001-Q01' })
 })
 
+// ── metadata hardening: mock_questions.metadata is NOT NULL (default
+// '{}'::jsonb, no DB trigger to fall back on), so buildPayload() must
+// never itself produce undefined or null here.
+test('buildPayload metadata: without question_id, resolves to {} (never undefined, never null)', () => {
+  const payload = buildPayload({ ...empty, question_id: undefined })
+  assert.deepEqual(payload.metadata, {})
+  assert.notStrictEqual(payload.metadata, undefined)
+  assert.notStrictEqual(payload.metadata, null)
+})
+
+test('buildPayload metadata: with question_id, resolves to { question_id } (never undefined, never null)', () => {
+  const payload = buildPayload({ ...empty, question_id: 'POL-CONS-001-Q01' })
+  assert.deepEqual(payload.metadata, { question_id: 'POL-CONS-001-Q01' })
+  assert.notStrictEqual(payload.metadata, undefined)
+  assert.notStrictEqual(payload.metadata, null)
+})
+
 test('a corrected POL-CONS-001-shaped row (subject-routed, lowercase status, no difficulty) imports cleanly end to end', () => {
   const row = {
     question_id: 'POL-CONS-001-Q01',
@@ -241,4 +258,378 @@ test('sanity: SUBJECT_TEST_MAP is the only mapping source used (no local duplica
   // this just makes the "single source of truth" property explicit.
   assert.ok(Object.keys(SUBJECT_TEST_MAP).length > 0)
   assert.equal(SUBJECT_TEST_MAP['Indian Polity'], 'indian-polity')
+})
+
+// ── validateImportRows: Phase 8.3 Step 3, Tier A duplicate detection ────
+//
+// findExactDuplicates() itself (normalization, matching, conflict typing)
+// is already exhaustively covered in tests/content-validation.test.mjs --
+// these tests are about the WIRING: grouping by test_id, converting
+// group-local indexes back to source-row numbers, the exact duplicate
+// error shape, and error ordering. No normalization/matching logic is
+// reimplemented here.
+
+test('validateImportRows: default third argument is backward compatible -- a clean batch behaves exactly as before', () => {
+  const rows = [baseRow({ subject: 'Indian Polity' })]
+  const { rows: out, errors } = validateImportRows(rows, VALID_TEST_IDS)
+  assert.equal(errors.length, 0)
+  assert.equal(out.length, 1)
+})
+
+test('validateImportRows: a row matching an existing DB question is rejected with the exact DUPLICATE_EXISTING shape', () => {
+  const existingQuestionsByTestId = {
+    'indian-polity': [{ id: 'existing-q1', test_id: 'indian-polity', question: 'Sample question?' }],
+  }
+  const rows = [baseRow({ subject: 'Indian Polity', question: 'Sample question?' })]
+  const { rows: out, errors } = validateImportRows(rows, VALID_TEST_IDS, existingQuestionsByTestId)
+  assert.equal(out.length, 0)
+  assert.equal(errors.length, 1)
+  assert.deepEqual(errors[0], {
+    row: 1,
+    reason: 'Duplicate question already exists in this test.',
+    code: 'DUPLICATE_EXISTING',
+    testId: 'indian-polity',
+    question: 'Sample question?',
+    matchedId: 'existing-q1',
+    matchedRow: null,
+  })
+})
+
+test('validateImportRows: existingQuestionsByTestId also works as a Map, not just a plain object', () => {
+  const existingQuestionsByTestId = new Map([
+    ['indian-polity', [{ id: 'existing-q1', test_id: 'indian-polity', question: 'Sample question?' }]],
+  ])
+  const rows = [baseRow({ subject: 'Indian Polity', question: 'Sample question?' })]
+  const { errors } = validateImportRows(rows, VALID_TEST_IDS, existingQuestionsByTestId)
+  assert.equal(errors.length, 1)
+  assert.equal(errors[0].code, 'DUPLICATE_EXISTING')
+  assert.equal(errors[0].matchedId, 'existing-q1')
+})
+
+test('validateImportRows: two identical new rows in the same batch -- only the later one is rejected, with the exact DUPLICATE_BATCH shape', () => {
+  const rows = [
+    baseRow({ subject: 'Indian Polity', question: 'Repeated?' }),
+    baseRow({ subject: 'Indian Polity', question: 'Repeated?' }),
+  ]
+  const { rows: out, errors } = validateImportRows(rows, VALID_TEST_IDS)
+  assert.equal(out.length, 0)
+  assert.equal(errors.length, 1)
+  assert.deepEqual(errors[0], {
+    row: 2,
+    reason: 'Duplicate question appears earlier in this import batch.',
+    code: 'DUPLICATE_BATCH',
+    testId: 'indian-polity',
+    question: 'Repeated?',
+    matchedId: null,
+    matchedRow: 1,
+  })
+})
+
+test('validateImportRows: a row matching both an existing DB question and an earlier batch row reports DUPLICATE_EXISTING for both, never DUPLICATE_BATCH', () => {
+  const existingQuestionsByTestId = {
+    'indian-polity': [{ id: 'existing-q1', test_id: 'indian-polity', question: 'Shared?' }],
+  }
+  const rows = [
+    baseRow({ subject: 'Indian Polity', question: 'Shared?' }),
+    baseRow({ subject: 'Indian Polity', question: 'Shared?' }),
+  ]
+  const { errors } = validateImportRows(rows, VALID_TEST_IDS, existingQuestionsByTestId)
+  assert.equal(errors.length, 2)
+  assert.equal(errors[0].code, 'DUPLICATE_EXISTING')
+  assert.equal(errors[1].code, 'DUPLICATE_EXISTING')
+})
+
+test('validateImportRows: duplicate checks are scoped per test_id -- the same question text in two different tests is not a conflict', () => {
+  const rows = [
+    baseRow({ subject: 'Indian Polity', question: 'Cross-test question?' }),
+    baseRow({ subject: 'Current Affairs', question: 'Cross-test question?' }),
+  ]
+  const { rows: out, errors } = validateImportRows(rows, VALID_TEST_IDS)
+  assert.equal(errors.length, 0)
+  assert.equal(out.length, 2)
+})
+
+test('validateImportRows: routing/shape errors are ordered before duplicate errors, both in ascending source-row order', () => {
+  const rows = [
+    baseRow({ subject: 'Indian Polity', question: 'Dup?' }),          // row 1 -- first occurrence, clean
+    baseRow({ subject: 'Indian Politi', question: 'Typo subject?' }), // row 2 -- routing error
+    baseRow({ subject: 'Indian Polity', question: 'Dup?' }),          // row 3 -- batch duplicate of row 1
+  ]
+  const { rows: out, errors } = validateImportRows(rows, VALID_TEST_IDS)
+  assert.equal(out.length, 0)
+  assert.deepEqual(errors.map(e => e.row), [2, 3])
+  assert.equal(errors[0].code, undefined, 'a routing error has no code field')
+  assert.equal(errors[1].code, 'DUPLICATE_BATCH')
+})
+
+test('validateImportRows: duplicate errors from different test_id groups are still merged into one ascending source-row order', () => {
+  const existingQuestionsByTestId = {
+    'general-science': [{ id: 'e1', test_id: 'general-science', question: 'DB dup?' }],
+  }
+  const rows = [
+    baseRow({ test_id: 'general-science', question: 'DB dup?' }),    // row 1 -- DUPLICATE_EXISTING (general-science group)
+    baseRow({ subject: 'Indian Polity', question: 'Batch first?' }), // row 2 -- clean (indian-polity group)
+    baseRow({ subject: 'Indian Polity', question: 'Batch first?' }), // row 3 -- DUPLICATE_BATCH (indian-polity group)
+  ]
+  const { errors } = validateImportRows(rows, VALID_TEST_IDS, existingQuestionsByTestId)
+  assert.deepEqual(errors.map(e => e.row), [1, 3])
+  assert.equal(errors[0].code, 'DUPLICATE_EXISTING')
+  assert.equal(errors[1].code, 'DUPLICATE_BATCH')
+})
+
+test('validateImportRows: normalized-text duplicates (case/whitespace) are still caught against the database', () => {
+  const existingQuestionsByTestId = {
+    'indian-polity': [{ id: 'e1', test_id: 'indian-polity', question: 'What Is It?' }],
+  }
+  const rows = [baseRow({ subject: 'Indian Polity', question: '  what is   it?  ' })]
+  const { errors } = validateImportRows(rows, VALID_TEST_IDS, existingQuestionsByTestId)
+  assert.equal(errors.length, 1)
+  assert.equal(errors[0].code, 'DUPLICATE_EXISTING')
+})
+
+test('validateImportRows: a duplicate error never includes the complete existing database record, only matchedId', () => {
+  const existingQuestionsByTestId = {
+    'indian-polity': [{ id: 'e1', test_id: 'indian-polity', question: 'Sample question?', status: 'published' }],
+  }
+  const rows = [baseRow({ subject: 'Indian Polity', question: 'Sample question?' })]
+  const { errors } = validateImportRows(rows, VALID_TEST_IDS, existingQuestionsByTestId)
+  assert.deepEqual(
+    Object.keys(errors[0]).sort(),
+    ['code', 'matchedId', 'matchedRow', 'question', 'reason', 'row', 'testId'].sort()
+  )
+})
+
+// ── Part 1: prototype-key safety ─────────────────────────────────────────
+//
+// AdminQuestions.jsx's bulkImport() Pass B builds existingQuestionsByTestId
+// with Object.create(null) specifically so a resolved test_id equal to an
+// inherited Object.prototype property name ("__proto__", "constructor",
+// "toString", etc.) can never collide with that inherited value.
+// AdminQuestions.jsx itself is a React component and isn't directly
+// unit-testable in this test architecture (same limitation already noted
+// at the top of this file for buildPayload()), so these tests instead
+// exercise the real exported validateImportRows() ->
+// getExistingQuestionsForTestId() path with a lookup object built exactly
+// the way the fixed production code builds it, proving the actual code
+// that consumes this lookup handles these keys safely end to end -- no
+// exception, the correct per-testId bucket is used (not a shared/wrong
+// one), and duplicate detection still works correctly for that key.
+
+const RISKY_TEST_IDS = ['__proto__', 'constructor', 'toString']
+const VALID_TEST_IDS_WITH_RISKY_KEYS = new Set([...VALID_TEST_IDS, ...RISKY_TEST_IDS])
+
+for (const riskyTestId of RISKY_TEST_IDS) {
+  test(`validateImportRows: a resolved test_id of "${riskyTestId}" does not throw and correctly detects a duplicate (Object.create(null) lookup, matching production)`, () => {
+    const existingQuestionsByTestId = Object.create(null)
+    existingQuestionsByTestId[riskyTestId] = [{ id: 'e1', test_id: riskyTestId, question: 'Sample question?' }]
+
+    const rows = [baseRow({ test_id: riskyTestId, question: 'Sample question?' })]
+    assert.doesNotThrow(() => validateImportRows(rows, VALID_TEST_IDS_WITH_RISKY_KEYS, existingQuestionsByTestId))
+
+    const { rows: out, errors } = validateImportRows(rows, VALID_TEST_IDS_WITH_RISKY_KEYS, existingQuestionsByTestId)
+    assert.equal(out.length, 0)
+    assert.equal(errors.length, 1)
+    assert.equal(errors[0].code, 'DUPLICATE_EXISTING')
+    assert.equal(errors[0].testId, riskyTestId)
+    assert.equal(errors[0].matchedId, 'e1')
+  })
+
+  test(`validateImportRows: a resolved test_id of "${riskyTestId}" -- a non-duplicate row still imports cleanly (proves the correct bucket is used, not a wrong/shared one)`, () => {
+    const existingQuestionsByTestId = Object.create(null)
+    existingQuestionsByTestId[riskyTestId] = [{ id: 'e1', test_id: riskyTestId, question: 'Unrelated existing question?' }]
+
+    const rows = [baseRow({ test_id: riskyTestId, question: 'A brand new question?' })]
+    const { rows: out, errors } = validateImportRows(rows, VALID_TEST_IDS_WITH_RISKY_KEYS, existingQuestionsByTestId)
+    assert.equal(errors.length, 0)
+    assert.equal(out.length, 1)
+  })
+}
+
+test('validateImportRows: getExistingQuestionsForTestId is safe even with a PLAIN {} (not Object.create(null)) lookup and a "constructor" test_id -- the shared function is defensive regardless of caller construction', () => {
+  const existingQuestionsByTestId = {} // deliberately NOT null-prototype
+  const validTestIdsWithConstructor = new Set([...VALID_TEST_IDS, 'constructor'])
+  const rows = [baseRow({ test_id: 'constructor', question: 'Some question?' })]
+  assert.doesNotThrow(() => validateImportRows(rows, validTestIdsWithConstructor, existingQuestionsByTestId))
+  const { rows: out, errors } = validateImportRows(rows, validTestIdsWithConstructor, existingQuestionsByTestId)
+  assert.equal(errors.length, 0, 'no real existing data was supplied for "constructor" -- it must import cleanly, not crash or false-positive')
+  assert.equal(out.length, 1)
+})
+
+// ── Part 2: completing previously MISSING/PARTIAL checklist items ───────
+
+test('validateImportRows: an existing CASE-ONLY duplicate rejects the full import, rows is []', () => {
+  const existingQuestionsByTestId = {
+    'indian-polity': [{ id: 'e1', test_id: 'indian-polity', question: 'What is the capital?' }],
+  }
+  const rows = [baseRow({ subject: 'Indian Polity', question: 'WHAT IS THE CAPITAL?' })]
+  const { rows: out, errors } = validateImportRows(rows, VALID_TEST_IDS, existingQuestionsByTestId)
+  assert.deepEqual(out, [])
+  assert.equal(errors.length, 1)
+  assert.equal(errors[0].code, 'DUPLICATE_EXISTING')
+})
+
+test('validateImportRows: an existing WHITESPACE-ONLY normalized duplicate rejects the full import, rows is []', () => {
+  const existingQuestionsByTestId = {
+    'indian-polity': [{ id: 'e1', test_id: 'indian-polity', question: 'What is the capital?' }],
+  }
+  const rows = [baseRow({ subject: 'Indian Polity', question: '  What   is the   capital?  ' })]
+  const { rows: out, errors } = validateImportRows(rows, VALID_TEST_IDS, existingQuestionsByTestId)
+  assert.deepEqual(out, [])
+  assert.equal(errors.length, 1)
+  assert.equal(errors[0].code, 'DUPLICATE_EXISTING')
+})
+
+test('validateImportRows: a punctuation-only difference from an existing question is allowed, not treated as a duplicate', () => {
+  const existingQuestionsByTestId = {
+    'indian-polity': [{ id: 'e1', test_id: 'indian-polity', question: 'What is the capital?' }],
+  }
+  const rows = [baseRow({ subject: 'Indian Polity', question: 'What is the capital' })] // no trailing '?'
+  const { rows: out, errors } = validateImportRows(rows, VALID_TEST_IDS, existingQuestionsByTestId)
+  assert.equal(errors.length, 0)
+  assert.equal(out.length, 1)
+})
+
+test('validateImportRows: the same question text already existing in a DIFFERENT test_id is allowed', () => {
+  const existingQuestionsByTestId = {
+    'general-science': [{ id: 'e1', test_id: 'general-science', question: 'Shared text?' }],
+  }
+  const rows = [baseRow({ subject: 'Indian Polity', question: 'Shared text?' })]
+  const { rows: out, errors } = validateImportRows(rows, VALID_TEST_IDS, existingQuestionsByTestId)
+  assert.equal(errors.length, 0)
+  assert.equal(out.length, 1)
+})
+
+test('validateImportRows: a case/whitespace-only duplicate WITHIN the batch rejects the full import', () => {
+  const rows = [
+    baseRow({ subject: 'Indian Polity', question: 'What is the capital?' }),
+    baseRow({ subject: 'Indian Polity', question: '  WHAT IS THE   CAPITAL?  ' }),
+  ]
+  const { rows: out, errors } = validateImportRows(rows, VALID_TEST_IDS)
+  assert.deepEqual(out, [])
+  assert.equal(errors.length, 1)
+  assert.equal(errors[0].code, 'DUPLICATE_BATCH')
+  assert.equal(errors[0].row, 2)
+  assert.equal(errors[0].matchedRow, 1)
+})
+
+test('validateImportRows: three repeated rows in a batch report the second and third as conflicts, in source-row order, both referencing the first', () => {
+  const rows = [
+    baseRow({ subject: 'Indian Polity', question: 'Repeat?' }),
+    baseRow({ subject: 'Indian Polity', question: 'Repeat?' }),
+    baseRow({ subject: 'Indian Polity', question: 'Repeat?' }),
+  ]
+  const { rows: out, errors } = validateImportRows(rows, VALID_TEST_IDS)
+  assert.deepEqual(out, [])
+  assert.equal(errors.length, 2)
+  assert.deepEqual(errors.map(e => e.row), [2, 3])
+  assert.deepEqual(errors.map(e => e.matchedRow), [1, 1])
+  assert.deepEqual(errors.map(e => e.code), ['DUPLICATE_BATCH', 'DUPLICATE_BATCH'])
+})
+
+test('validateImportRows: an empty/malformed question stays a required-field error, never miscategorized as a duplicate, even alongside real duplicates elsewhere in the batch', () => {
+  const rows = [
+    baseRow({ subject: 'Indian Polity', question: '' }),        // row 1 -- shape error
+    baseRow({ subject: 'Indian Polity', question: 'Repeat?' }), // row 2 -- clean (first occurrence)
+    baseRow({ subject: 'Indian Polity', question: 'Repeat?' }), // row 3 -- batch duplicate of row 2
+  ]
+  const { rows: out, errors } = validateImportRows(rows, VALID_TEST_IDS)
+  assert.deepEqual(out, [])
+  assert.equal(errors.length, 2)
+  assert.equal(errors[0].row, 1)
+  assert.match(errors[0].reason, /missing question or invalid correct_answer/)
+  assert.equal(errors[0].code, undefined, 'a shape error must never carry a duplicate code')
+  assert.equal(errors[1].row, 3)
+  assert.equal(errors[1].code, 'DUPLICATE_BATCH')
+})
+
+test('validateImportRows: a resolved test_id absent from existingQuestionsByTestId behaves as no existing data (missing key => [])', () => {
+  const existingQuestionsByTestId = {
+    'general-science': [{ id: 'e1', test_id: 'general-science', question: 'Unrelated?' }],
+  }
+  const rows = [baseRow({ subject: 'Indian Polity', question: 'Sample question?' })] // 'indian-polity' key absent
+  const { rows: out, errors } = validateImportRows(rows, VALID_TEST_IDS, existingQuestionsByTestId)
+  assert.equal(errors.length, 0)
+  assert.equal(out.length, 1)
+})
+
+test('validateImportRows: every kind of invalid existing-questions value (string, object, number, null, undefined) is treated as empty, never thrown', () => {
+  for (const invalidValue of ['not-an-array', {}, 42, null, undefined]) {
+    const existingQuestionsByTestId = { 'indian-polity': invalidValue }
+    const rows = [baseRow({ subject: 'Indian Polity', question: 'Sample question?' })]
+    assert.doesNotThrow(() => validateImportRows(rows, VALID_TEST_IDS, existingQuestionsByTestId))
+    const { errors } = validateImportRows(rows, VALID_TEST_IDS, existingQuestionsByTestId)
+    assert.equal(errors.length, 0, `invalid value ${JSON.stringify(invalidValue)} must not produce a false duplicate or throw`)
+  }
+})
+
+test('validateImportRows: a null third argument behaves as no existing data', () => {
+  const rows = [baseRow({ subject: 'Indian Polity' })]
+  assert.doesNotThrow(() => validateImportRows(rows, VALID_TEST_IDS, null))
+  const { errors } = validateImportRows(rows, VALID_TEST_IDS, null)
+  assert.equal(errors.length, 0)
+})
+
+test('validateImportRows: an explicit undefined third argument behaves as no existing data (falls through to the default)', () => {
+  const rows = [baseRow({ subject: 'Indian Polity' })]
+  const { errors } = validateImportRows(rows, VALID_TEST_IDS, undefined)
+  assert.equal(errors.length, 0)
+})
+
+test('validateImportRows: a caller-supplied plain object lookup is never mutated', () => {
+  const existingQuestionsByTestId = {
+    'indian-polity': [{ id: 'e1', test_id: 'indian-polity', question: 'Sample question?' }],
+  }
+  const before = JSON.parse(JSON.stringify(existingQuestionsByTestId))
+  const rows = [baseRow({ subject: 'Indian Polity', question: 'Sample question?' })]
+  validateImportRows(rows, VALID_TEST_IDS, existingQuestionsByTestId)
+  assert.deepEqual(existingQuestionsByTestId, before)
+})
+
+test('validateImportRows: a caller-supplied Map lookup is never mutated', () => {
+  const record = { id: 'e1', test_id: 'indian-polity', question: 'Sample question?' }
+  const existingQuestionsByTestId = new Map([['indian-polity', [record]]])
+  const rows = [baseRow({ subject: 'Indian Polity', question: 'Sample question?' })]
+  validateImportRows(rows, VALID_TEST_IDS, existingQuestionsByTestId)
+  assert.equal(existingQuestionsByTestId.size, 1)
+  assert.deepEqual(existingQuestionsByTestId.get('indian-polity'), [record])
+})
+
+test('validateImportRows: caller-supplied rawRows array and individual row objects are never mutated', () => {
+  const rows = [baseRow({ subject: 'Indian Polity', question: 'Sample question?' })]
+  const rowsBefore = JSON.parse(JSON.stringify(rows))
+  validateImportRows(rows, VALID_TEST_IDS)
+  assert.deepEqual(rows, rowsBefore)
+})
+
+test('validateImportRows: existing-question record objects inside the lookup are never mutated', () => {
+  const record = { id: 'e1', test_id: 'indian-polity', question: 'Sample question?' }
+  const recordBefore = JSON.parse(JSON.stringify(record))
+  const existingQuestionsByTestId = { 'indian-polity': [record] }
+  const rows = [baseRow({ subject: 'Indian Polity', question: 'Sample question?' })]
+  validateImportRows(rows, VALID_TEST_IDS, existingQuestionsByTestId)
+  assert.deepEqual(record, recordBefore)
+})
+
+test('validateImportRows: a mixed batch of clean rows plus one conflicting row returns rows: [] (all-or-nothing, not just dropping the conflicting one)', () => {
+  const rows = [
+    baseRow({ subject: 'Indian Polity', question: 'Clean one?' }),
+    baseRow({ subject: 'Indian Polity', question: 'Clean two?' }),
+    baseRow({ subject: 'Indian Polity', question: 'Clean one?' }), // duplicate of row 1
+  ]
+  const { rows: out, errors } = validateImportRows(rows, VALID_TEST_IDS)
+  assert.deepEqual(out, [])
+  assert.equal(errors.length, 1)
+  assert.equal(errors[0].row, 3)
+})
+
+test('validateImportRows: a DUPLICATE_BATCH error object contains exactly the seven approved fields, no more, no fewer', () => {
+  const rows = [
+    baseRow({ subject: 'Indian Polity', question: 'Repeat?' }),
+    baseRow({ subject: 'Indian Polity', question: 'Repeat?' }),
+  ]
+  const { errors } = validateImportRows(rows, VALID_TEST_IDS)
+  assert.deepEqual(
+    Object.keys(errors[0]).sort(),
+    ['row', 'reason', 'code', 'testId', 'question', 'matchedId', 'matchedRow'].sort()
+  )
 })

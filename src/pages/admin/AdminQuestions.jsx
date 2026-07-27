@@ -5,6 +5,8 @@ import Modal from '../../components/Modal'
 import { supabase } from '../../lib/supabase'
 import toast from 'react-hot-toast'
 import { validateImportRows } from '../../lib/questionImport.js'
+import { evaluateQuestionSaveDuplicates } from '../../lib/adminQuestionValidation.js'
+import { evaluatePublishConflicts } from '../../lib/adminQuestionPublishValidation.js'
 
 const DIFFICULTIES = ['easy', 'medium', 'hard']
 const STATUSES = ['draft', 'in_review', 'approved', 'published', 'rejected', 'archived']
@@ -155,9 +157,10 @@ export default function AdminQuestions() {
       status: f.status || 'draft',
       // Phase 8.0: preserve an incoming question_id (e.g. from QuestionBank
       // batches) inside the existing metadata jsonb column -- no schema
-      // change, and `undefined` here is dropped before the request body is
-      // built, so rows/forms with no question_id behave exactly as before.
-      metadata: f.question_id ? { question_id: f.question_id } : undefined,
+      // change. metadata is jsonb NOT NULL (default '{}'::jsonb, no DB
+      // trigger backing it up), so this always resolves to a real object
+      // -- never undefined, never null.
+      metadata: f.question_id ? { question_id: f.question_id } : {},
     }
   }
 
@@ -168,16 +171,85 @@ export default function AdminQuestions() {
     if (!form.option_a?.trim() || !form.option_b?.trim() || !form.option_c?.trim() || !form.option_d?.trim()) {
       toast.error('All four options (A-D) are required'); return
     }
+
+    // Phase 8.3 Step 4: double-submit guard. Required-field checks above are
+    // synchronous and don't need it; everything from here on awaits.
+    if (saving) return
     setSaving(true)
-    const payload = buildPayload(form)
-    if (payload.status === 'published' && !editing) payload.published_at = new Date().toISOString()
-    let err
-    if (editing) ({ error: err } = await supabase.from('mock_questions').update(payload).eq('id', editing))
-    else ({ error: err } = await supabase.from('mock_questions').insert([payload]))
-    setSaving(false)
-    if (err) { toast.error(err.message); return }
-    toast.success(editing ? 'Question updated' : 'Question added')
-    setModal(false); load()
+
+    // try/finally so `saving` is restored on every exit path -- including
+    // every early `return` below -- without setting it false before the
+    // final insert/update has actually completed on the success path.
+    try {
+      // Tier A: fetch existing questions scoped to the exact selected
+      // test_id. Minimal columns only, same as Bulk Import's Pass B.
+      const { data: existingQuestions, error: existingQuestionsError } = await supabase
+        .from('mock_questions')
+        .select('id, test_id, question, status')
+        .eq('test_id', form.test_id)
+
+      if (existingQuestionsError) {
+        toast.error('Could not verify duplicate questions. Save was cancelled.')
+        return
+      }
+
+      // Create has no id yet (editing is null); Edit's id is the
+      // authoritative self-exclusion value for both Tier A and Tier B.
+      const editingId = editing || undefined
+
+      const tierACheck = evaluateQuestionSaveDuplicates({
+        question: form.question,
+        editingId,
+        existingQuestions: existingQuestions || [],
+        nearDuplicateRpcRows: [],
+      })
+
+      if (tierACheck.tierAConflict) {
+        toast.error('An exact duplicate question already exists in this test.')
+        return
+      }
+
+      // Tier B: only after Tier A passes.
+      const { data: nearDuplicateRpcRows, error: nearDuplicateError } = await supabase.rpc(
+        'find_near_duplicate_questions',
+        { p_test_id: form.test_id, p_questions: [form.question], p_threshold: 0.45 }
+      )
+
+      if (nearDuplicateError) {
+        toast.error('Could not verify near-duplicate questions. Save was cancelled.')
+        return
+      }
+
+      const { tierBWarnings } = evaluateQuestionSaveDuplicates({
+        question: form.question,
+        editingId,
+        existingQuestions: existingQuestions || [],
+        nearDuplicateRpcRows: nearDuplicateRpcRows || [],
+      })
+
+      if (tierBWarnings.length > 0) {
+        // Already ordered by descending similarity -- [0] is the closest
+        // match. The rounded percentage is display-only, never stored.
+        const closest = tierBWarnings[0]
+        const displayPercent = Math.round(closest.similarity * 100)
+        const proceed = confirm(
+          `This question looks similar to an existing one (${displayPercent}% match):\n\n"${closest.matchedQuestion}"\n\nSave anyway?`
+        )
+        if (!proceed) return
+      }
+
+      // Existing insert/update path -- payload construction unchanged.
+      const payload = buildPayload(form)
+      if (payload.status === 'published' && !editing) payload.published_at = new Date().toISOString()
+      let err
+      if (editing) ({ error: err } = await supabase.from('mock_questions').update(payload).eq('id', editing))
+      else ({ error: err } = await supabase.from('mock_questions').insert([payload]))
+      if (err) { toast.error(err.message); return }
+      toast.success(editing ? 'Question updated' : 'Question added')
+      setModal(false); load()
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function remove(id) {
@@ -216,9 +288,53 @@ export default function AdminQuestions() {
     // Phase 8.1: resolution (test_id -> mock_test_assignment -> subject map)
     // and structural validation both live in src/lib/questionImport.js --
     // the same functions this behavior is tested against, not a copy.
-    const { rows: normalizedRows, errors } = validateImportRows(rows, validTestIds)
+    //
+    // Phase 8.3 Step 3: three passes.
+    //
+    // Pass A -- local validation only (no DB round-trip yet). Catches
+    // routing errors, required-field errors, and Tier A duplicates WITHIN
+    // this batch (validateImportRows's third argument defaults to {}, so
+    // no existing-DB question can match here -- only batch-internal repeats
+    // can).
+    const initialValidation = validateImportRows(rows, validTestIds)
+    if (initialValidation.errors.length > 0) {
+      setImportResult({ imported: 0, skipped: rows.length, errors: initialValidation.errors })
+      toast.error(`Import rejected — ${initialValidation.errors.length} of ${rows.length} row(s) failed validation. Nothing was written; fix and re-import.`)
+      return
+    }
 
-    if (errors.length > 0) {
+    // Pass B -- fetch existing questions for every distinct resolved
+    // test_id in this batch, in exactly one query, to check Tier A
+    // duplicates against real DB state. Minimal columns only -- this is a
+    // duplicate check, not a data preview.
+    const distinctTestIds = [...new Set(initialValidation.rows.map(row => row.test_id))]
+    const { data: existingQuestions, error: existingQuestionsError } = await supabase
+      .from('mock_questions')
+      .select('id, test_id, question, status')
+      .in('test_id', distinctTestIds)
+
+    if (existingQuestionsError) {
+      // Fail closed, same as load()'s error handling: if duplicate state
+      // can't be verified, the import must not proceed unchecked.
+      setImportResult({ imported: 0, skipped: rows.length, errors: [{ row: '-', reason: existingQuestionsError.message }] })
+      toast.error('Could not verify duplicate questions. Import was cancelled.')
+      return
+    }
+
+    const existingQuestionsByTestId = Object.create(null)
+    for (const question of existingQuestions || []) {
+      if (!existingQuestionsByTestId[question.test_id]) {
+        existingQuestionsByTestId[question.test_id] = []
+      }
+      existingQuestionsByTestId[question.test_id].push(question)
+    }
+
+    // Pass C -- final validation, now duplicate-aware against real DB
+    // state. Re-runs the same routing/shape checks (cheap, pure) plus
+    // Tier A duplicate detection against both the DB and the batch.
+    const finalValidation = validateImportRows(rows, validTestIds, existingQuestionsByTestId)
+
+    if (finalValidation.errors.length > 0) {
       // Phase 8.1: the whole batch is all-or-nothing. ANY row error rejects
       // every row, including ones that individually passed -- an Enterprise
       // QuestionBank batch must never partially land in production. Nothing
@@ -230,13 +346,14 @@ export default function AdminQuestions() {
       // succeed (e.g. 48 good rows + 2 typos) now imports zero rows until
       // every row is fixed. See the Phase 8.1 patch notes for the full
       // rationale -- this trades a modest workflow inconvenience for a
-      // guarantee that no batch is ever incomplete in production.
-      setImportResult({ imported: 0, skipped: rows.length, errors })
-      toast.error(`Import rejected — ${errors.length} of ${rows.length} row(s) failed validation. Nothing was written; fix and re-import.`)
+      // guarantee that no batch is ever incomplete in production. Phase 8.3
+      // extends the same guarantee to duplicate questions.
+      setImportResult({ imported: 0, skipped: rows.length, errors: finalValidation.errors })
+      toast.error(`Import rejected — ${finalValidation.errors.length} of ${rows.length} row(s) failed validation. Nothing was written; fix and re-import.`)
       return
     }
 
-    const payloads = normalizedRows.map(r => buildPayload({ ...empty, ...r }))
+    const payloads = finalValidation.rows.map(r => buildPayload({ ...empty, ...r }))
 
     setImporting(true)
     const { error } = await supabase.from('mock_questions').insert(payloads)
@@ -296,9 +413,70 @@ export default function AdminQuestions() {
   }
   async function bulkSetStatus(status) {
     if (selected.size === 0) return
-    const patch = { status }
-    if (status === 'published') patch.published_at = new Date().toISOString()
-    const { error } = await supabase.from('mock_questions').update(patch).in('id', [...selected])
+
+    // Phase 8.3 Step 5: only publishing gets duplicate validation.
+    // draft/approved/rejected/archived keep the exact prior behavior --
+    // no extra fetch, no duplicate query.
+    if (status !== 'published') {
+      const patch = { status }
+      const { error } = await supabase.from('mock_questions').update(patch).in('id', [...selected])
+      if (error) { toast.error(error.message); return }
+      toast.success(`${selected.size} question(s) -> ${status}`)
+      load()
+      return
+    }
+
+    const selectedIds = [...selected]
+
+    // Step B: fetch every selected row directly from the DB by id -- never
+    // rely on `items` (the current page's cache), since selection could in
+    // principle include ids beyond what's currently rendered.
+    const { data: selectedQuestions, error: selectedQuestionsError } = await supabase
+      .from('mock_questions')
+      .select('id, test_id, question, status')
+      .in('id', selectedIds)
+
+    if (selectedQuestionsError) {
+      toast.error('Could not verify the selected questions. Publish was cancelled.')
+      return
+    }
+
+    if (!selectedQuestions || selectedQuestions.length !== selectedIds.length) {
+      toast.error('Some selected questions could not be found. Publish was cancelled.')
+      return
+    }
+
+    // Step C: fetch already-published rows for every distinct test_id in
+    // the selection, in exactly one query.
+    const distinctTestIds = [...new Set(selectedQuestions.map(q => q.test_id))]
+    const { data: publishedQuestions, error: publishedQuestionsError } = await supabase
+      .from('mock_questions')
+      .select('id, test_id, question, status')
+      .in('test_id', distinctTestIds)
+      .eq('status', 'published')
+
+    if (publishedQuestionsError) {
+      toast.error('Could not verify published duplicates. Publish was cancelled.')
+      return
+    }
+
+    const publishedQuestionsByTestId = Object.create(null)
+    for (const q of publishedQuestions || []) {
+      if (!publishedQuestionsByTestId[q.test_id]) publishedQuestionsByTestId[q.test_id] = []
+      publishedQuestionsByTestId[q.test_id].push(q)
+    }
+
+    // Step D: Tier A conflict check -- all-or-nothing, same guarantee as
+    // Bulk Import and Manual Create/Edit. Tier B is never consulted here.
+    const conflicts = evaluatePublishConflicts({ selectedQuestions, publishedQuestionsByTestId })
+    if (conflicts.length > 0) {
+      toast.error('One or more selected questions duplicate existing published questions. Nothing was published.')
+      return
+    }
+
+    // Step E: existing bulk update, unchanged.
+    const patch = { status, published_at: new Date().toISOString() }
+    const { error } = await supabase.from('mock_questions').update(patch).in('id', selectedIds)
     if (error) { toast.error(error.message); return }
     toast.success(`${selected.size} question(s) -> ${status}`)
     load()

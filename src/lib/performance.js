@@ -95,20 +95,37 @@ const SECONDS_PER_QUESTION = 45
  * difficulty or length -- both come from the caller's own query against
  * mock_questions for that one test_id.
  *
+ * Estimated Time is always based on the FULL published question count --
+ * difficulty coverage must never inflate or shrink it. Enterprise
+ * QuestionBank bulk imports intentionally store difficulty as NULL
+ * (Phase 8.0/8.1), so a test can have plenty of real published questions
+ * with none of them carrying a difficulty value; the duration estimate
+ * must still reflect all of them.
+ *
+ * Difficulty is calculated independently and is only returned when EVERY
+ * row in questionMeta has a difficulty value -- partial coverage is
+ * treated the same as no coverage (no label), never a misleading partial
+ * one. This function does not mutate its input.
+ *
  * @param {Array<{difficulty: string}>} questionMeta - published questions
  *   for the recommended test (difficulty column only)
- * @returns {{ estimatedMinutes: number, difficulty: string } | null}
- *   null when there's no question data to base an estimate on
+ * @returns {{ estimatedMinutes: number, difficulty?: string } | null}
+ *   null when there's no question data to base an estimate on;
+ *   `difficulty` is omitted (undefined) whenever coverage isn't complete
  */
 export function getMissionDetails(questionMeta) {
-  const rows = (questionMeta || []).filter(q => q && q.difficulty)
-  if (rows.length === 0) return null
+  const total = (questionMeta || []).length
+  if (total === 0) return null
 
-  const counts = {}
-  for (const q of rows) counts[q.difficulty] = (counts[q.difficulty] || 0) + 1
-  const difficulty = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0]
+  const estimatedMinutes = Math.max(1, Math.round((total * SECONDS_PER_QUESTION) / 60))
 
-  const estimatedMinutes = Math.max(1, Math.round((rows.length * SECONDS_PER_QUESTION) / 60))
+  const rows = questionMeta.filter(q => q && q.difficulty)
+  let difficulty
+  if (rows.length === total) {
+    const counts = {}
+    for (const q of rows) counts[q.difficulty] = (counts[q.difficulty] || 0) + 1
+    difficulty = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0]
+  }
 
   return { estimatedMinutes, difficulty }
 }

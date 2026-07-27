@@ -1,0 +1,12 @@
+-- Phase 8.3 depends on the pg_trgm extension: the duplicate-detection
+-- migration (20260724120000_phase8_3c_duplicate_detection.sql) uses
+-- gin_trgm_ops for its index and similarity()/set_limit()/the % operator
+-- inside find_near_duplicate_questions(). This migration is intentionally
+-- timestamped earlier (20260724115000, five minutes before 20260724120000)
+-- so it always runs first in migration order, guaranteeing the extension
+-- exists before anything that depends on it is created.
+--
+-- Safe to run even when pg_trgm already exists (as it already does, today,
+-- on every currently-known environment for this project) -- `create
+-- extension if not exists` is a no-op in that case, not an error.
+create extension if not exists pg_trgm with schema public;
