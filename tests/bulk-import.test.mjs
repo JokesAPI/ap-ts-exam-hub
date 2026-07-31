@@ -633,3 +633,85 @@ test('validateImportRows: a DUPLICATE_BATCH error object contains exactly the se
     ['row', 'reason', 'code', 'testId', 'question', 'matchedId', 'matchedRow'].sort()
   )
 })
+
+// ── Phase 9: Indian Geography destination routing ──────────────────────
+//
+// VALID_TEST_IDS (above) intentionally does NOT include 'indian-geography'
+// -- it mirrors AdminQuestions.jsx's live `tests` state, sourced from
+// public.mock_tests, and that catalog row does not exist until the Phase 9
+// migration is applied. These tests prove both halves of resolution:
+// SUBJECT_TEST_MAP now maps the subject, but resolveImportTestId/
+// validateImportRows still correctly reject it until validTestIds also
+// contains it -- and correctly accept it once both are true. A second,
+// local set (VALID_TEST_IDS_WITH_INDIAN_GEOGRAPHY) is used only where the
+// catalog row is meant to already exist, so the shared VALID_TEST_IDS
+// fixture -- and every test above that depends on it -- is left untouched.
+
+const VALID_TEST_IDS_WITH_INDIAN_GEOGRAPHY = new Set([...VALID_TEST_IDS, 'indian-geography'])
+
+test('resolveImportTestId: Indian Geography subject resolves to indian-geography through the subject fallback', () => {
+  const { testId, error } = resolveImportTestId(
+    baseRow({ subject: 'Indian Geography' }), VALID_TEST_IDS_WITH_INDIAN_GEOGRAPHY)
+  assert.equal(error, undefined)
+  assert.equal(testId, 'indian-geography')
+})
+
+test('resolveImportTestId: mock_test_assignment = indian-geography resolves directly, bypassing the subject map entirely', () => {
+  const { testId, error } = resolveImportTestId(
+    baseRow({ mock_test_assignment: 'indian-geography' }), VALID_TEST_IDS_WITH_INDIAN_GEOGRAPHY)
+  assert.equal(error, undefined)
+  assert.equal(testId, 'indian-geography')
+})
+
+test('resolveImportTestId: Indian Geography subject is rejected while indian-geography is absent from validTestIds', () => {
+  const { testId, error } = resolveImportTestId(baseRow({ subject: 'Indian Geography' }), VALID_TEST_IDS)
+  assert.equal(testId, undefined)
+  assert.match(error, /unknown test_id "indian-geography"/)
+})
+
+test('resolveImportTestId: mock_test_assignment = indian-geography is also rejected while absent from validTestIds', () => {
+  const { testId, error } = resolveImportTestId(
+    baseRow({ mock_test_assignment: 'indian-geography' }), VALID_TEST_IDS)
+  assert.equal(testId, undefined)
+  assert.match(error, /unknown test_id "indian-geography"/)
+})
+
+test('validateImportRows: an Indian Geography batch is rejected whole (all-or-nothing) while its catalog row is absent', () => {
+  const rows = [
+    baseRow({ subject: 'Indian Geography', question: 'Which river forms the Kaveri delta?' }),
+    baseRow({ subject: 'Indian Polity', question: 'Would individually pass?' }),
+  ]
+  const { rows: out, errors } = validateImportRows(rows, VALID_TEST_IDS)
+  assert.equal(out.length, 0, 'the whole batch must be rejected, including the otherwise-valid Indian Polity row')
+  assert.equal(errors.length, 1)
+  assert.equal(errors[0].row, 1)
+  assert.match(errors[0].reason, /unknown test_id "indian-geography"/)
+})
+
+test('validateImportRows: an Indian Geography batch passes validation once its catalog row exists', () => {
+  const rows = [
+    baseRow({ subject: 'Indian Geography', question: 'Which river forms the Kaveri delta?' }),
+  ]
+  const { rows: out, errors } = validateImportRows(rows, VALID_TEST_IDS_WITH_INDIAN_GEOGRAPHY)
+  assert.equal(errors.length, 0)
+  assert.equal(out.length, 1)
+  assert.equal(out[0].test_id, 'indian-geography')
+})
+
+test('normalizeImportRow: no input status lets an Indian Geography row bypass normalization to draft', () => {
+  for (const inputStatus of ['published', 'Published', 'PUBLISHED', 'approved', undefined]) {
+    const row = normalizeImportRow(baseRow({ subject: 'Indian Geography', status: inputStatus }), 'indian-geography')
+    assert.equal(row.status, 'draft', `input status "${inputStatus}" must normalize to 'draft' for Indian Geography too`)
+  }
+})
+
+test('SUBJECT_TEST_MAP: Indian Geography entry is present and no existing mapping was altered', () => {
+  assert.equal(SUBJECT_TEST_MAP['Indian Geography'], 'indian-geography')
+  assert.equal(SUBJECT_TEST_MAP['Indian Polity'], 'indian-polity')
+  assert.equal(SUBJECT_TEST_MAP['Indian Economy'], 'indian-economy')
+  assert.equal(SUBJECT_TEST_MAP['General Science'], 'general-science')
+  assert.equal(SUBJECT_TEST_MAP['AP History'], 'ap-history')
+  assert.equal(SUBJECT_TEST_MAP['AP Geography'], 'ap-geography')
+  assert.equal(SUBJECT_TEST_MAP['Current Affairs'], 'current-affairs-apts')
+  assert.equal(Object.keys(SUBJECT_TEST_MAP).length, 7)
+})

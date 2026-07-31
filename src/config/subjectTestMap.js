@@ -29,4 +29,5 @@ export const SUBJECT_TEST_MAP = {
   // Current Affairs is a deliberate exception, not a slugified guess --
   // exactly why this is an explicit lookup table and not a formula.
   'Current Affairs': 'current-affairs-apts',
+  'Indian Geography': 'indian-geography',
 }
