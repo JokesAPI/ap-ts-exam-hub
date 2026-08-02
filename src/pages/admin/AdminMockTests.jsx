@@ -22,6 +22,30 @@ import { RefreshCw, CheckCircle, XCircle } from 'lucide-react'
 // alternative (extending get_question_metrics() with a by-test_id
 // breakdown) if that ever changes.
 
+// Pure resolution step for load(): decides, from the two raw query results,
+// whether the load succeeded and (if so) what `tests`/`counts` should become.
+// Extracted specifically so the fail-closed behavior below is unit-testable
+// without mocking React state -- load() itself does nothing but call this
+// and apply the result, so this is the one and only place that decision
+// logic lives.
+function resolveLoadResult({ testRows, testsErr, qRows, qErr }) {
+  if (testsErr || qErr) {
+    return { ok: false, error: testsErr?.message || qErr?.message || 'Failed to load mock tests.' }
+  }
+
+  const agg = {}
+  for (const row of qRows || []) {
+    const tid = row.test_id
+    if (!agg[tid]) agg[tid] = { total: 0, published: 0, draft: 0, other: 0 }
+    agg[tid].total += 1
+    if (row.status === 'published') agg[tid].published += 1
+    else if (row.status === 'draft') agg[tid].draft += 1
+    else agg[tid].other += 1 // rejected / in_review / anything else -- counts toward total only
+  }
+
+  return { ok: true, tests: testRows || [], counts: agg }
+}
+
 export default function AdminMockTests() {
   const [tests, setTests] = useState([])
   const [counts, setCounts] = useState({}) // test_id -> { total, published, draft, other }
@@ -42,29 +66,21 @@ export default function AdminMockTests() {
       supabase.from('mock_questions').select('test_id, status'),
     ])
 
-    if (testsErr || qErr) {
+    const result = resolveLoadResult({ testRows, testsErr, qRows, qErr })
+
+    if (!result.ok) {
       // Fail closed: never leave stale rows on screen paired with a silent
       // wrong count, and never render 0s that look like real data -- show
       // the error and stop, without touching `tests`/`counts` if this was a
       // refresh (so a failed refresh keeps last-known-good data visible
       // under the error banner rather than wiping the table).
-      setError(testsErr?.message || qErr?.message || 'Failed to load mock tests.')
+      setError(result.error)
       setLoading(false)
       return
     }
 
-    const agg = {}
-    for (const row of qRows || []) {
-      const tid = row.test_id
-      if (!agg[tid]) agg[tid] = { total: 0, published: 0, draft: 0, other: 0 }
-      agg[tid].total += 1
-      if (row.status === 'published') agg[tid].published += 1
-      else if (row.status === 'draft') agg[tid].draft += 1
-      else agg[tid].other += 1 // rejected / in_review / anything else -- counts toward total only
-    }
-
-    setTests(testRows || [])
-    setCounts(agg)
+    setTests(result.tests)
+    setCounts(result.counts)
     setLoading(false)
   }, [])
 
@@ -141,7 +157,7 @@ export default function AdminMockTests() {
           <h1 className="text-2xl font-bold">Mock Tests</h1>
           <p className="text-gray-500 dark:text-gray-400 text-sm">Activate or deactivate official mock test destinations</p>
         </div>
-        <button onClick={load} disabled={loading} className="btn-secondary text-sm disabled:opacity-60">
+        <button onClick={load} disabled={loading || anySaving} className="btn-secondary text-sm disabled:opacity-60">
           <RefreshCw className="h-4 w-4" /> Refresh
         </button>
       </div>

@@ -24,6 +24,29 @@ function aggregateCounts(qRows) {
   return agg
 }
 
+// ── exact body of resolveLoadResult(), copied from AdminMockTests.jsx ──────
+// This is load()'s entire decision logic: given the two raw query results,
+// decide fail-closed (preserve existing state, report an error) vs. success
+// (replace tests/counts). load() itself does nothing but call this and
+// apply the result -- see the component for the exact call site.
+function resolveLoadResult({ testRows, testsErr, qRows, qErr }) {
+  if (testsErr || qErr) {
+    return { ok: false, error: testsErr?.message || qErr?.message || 'Failed to load mock tests.' }
+  }
+
+  const agg = {}
+  for (const row of qRows || []) {
+    const tid = row.test_id
+    if (!agg[tid]) agg[tid] = { total: 0, published: 0, draft: 0, other: 0 }
+    agg[tid].total += 1
+    if (row.status === 'published') agg[tid].published += 1
+    else if (row.status === 'draft') agg[tid].draft += 1
+    else agg[tid].other += 1
+  }
+
+  return { ok: true, tests: testRows || [], counts: agg }
+}
+
 function getCounts(counts, testId) {
   return counts[testId] || { total: 0, published: 0, draft: 0, other: 0 }
 }
@@ -188,6 +211,140 @@ test('aggregation: unexpected statuses count toward total but not published/draf
   assert.equal(agg.x.other, 2)
 })
 
+// ── load() fail-closed behavior ─────────────────────────────────────────────
+
+// ── exact body of load(), copied from AdminMockTests.jsx ───────────────────
+// (minus the useCallback wrapper, which is a React-only concern -- the async
+// body itself, including the call to resolveLoadResult(), is unmodified.)
+function makeLoad({ setLoading, setError, setTests, setCounts }) {
+  return async function load(supabase) {
+    setLoading(true)
+    setError('')
+
+    const [{ data: testRows, error: testsErr }, { data: qRows, error: qErr }] = await Promise.all([
+      supabase.from('mock_tests').select('*').order('display_order', { ascending: true }),
+      supabase.from('mock_questions').select('test_id, status'),
+    ])
+
+    const result = resolveLoadResult({ testRows, testsErr, qRows, qErr })
+
+    if (!result.ok) {
+      setError(result.error)
+      setLoading(false)
+      return
+    }
+
+    setTests(result.tests)
+    setCounts(result.counts)
+    setLoading(false)
+  }
+}
+
+function makeLoadSupabase({ testsResult, questionsResult }) {
+  return {
+    from(table) {
+      if (table === 'mock_tests') {
+        return { select: () => ({ order: () => Promise.resolve(testsResult) }) }
+      }
+      if (table === 'mock_questions') {
+        return { select: () => Promise.resolve(questionsResult) }
+      }
+      throw new Error(`Unexpected table in load() mock: ${table}`)
+    },
+  }
+}
+
+function loadHarness() {
+  const state = { loading: null, error: null, tests: null, counts: null }
+  const load = makeLoad({
+    setLoading: v => { state.loading = v },
+    setError: v => { state.error = v },
+    setTests: v => { state.tests = v },
+    setCounts: v => { state.counts = v },
+  })
+  return { state, load }
+}
+
+test('load(): mock_tests query failure preserves existing tests/counts, sets a useful error, resets loading', async () => {
+  const { state, load } = loadHarness()
+  const existingTests = [{ test_id: 'existing', title: 'Existing Test' }]
+  const existingCounts = { existing: { total: 5, published: 5, draft: 0, other: 0 } }
+  state.tests = existingTests
+  state.counts = existingCounts
+
+  const supabase = makeLoadSupabase({
+    testsResult: { data: null, error: { message: 'mock_tests fetch failed' } },
+    questionsResult: { data: [{ test_id: 'existing', status: 'published' }], error: null },
+  })
+
+  await load(supabase)
+
+  assert.equal(state.error, 'mock_tests fetch failed')
+  assert.strictEqual(state.tests, existingTests, 'tests must not be replaced on failure')
+  assert.strictEqual(state.counts, existingCounts, 'counts must not be replaced on failure')
+  assert.equal(state.loading, false, 'loading must reset even on failure')
+})
+
+test('load(): mock_questions query failure preserves existing tests/counts, sets a useful error, resets loading', async () => {
+  const { state, load } = loadHarness()
+  const existingTests = [{ test_id: 'existing', title: 'Existing Test' }]
+  const existingCounts = { existing: { total: 5, published: 5, draft: 0, other: 0 } }
+  state.tests = existingTests
+  state.counts = existingCounts
+
+  const supabase = makeLoadSupabase({
+    testsResult: { data: [{ test_id: 'existing', title: 'Existing Test' }], error: null },
+    questionsResult: { data: null, error: { message: 'mock_questions fetch failed' } },
+  })
+
+  await load(supabase)
+
+  assert.equal(state.error, 'mock_questions fetch failed')
+  assert.strictEqual(state.tests, existingTests, 'tests must not be replaced on failure')
+  assert.strictEqual(state.counts, existingCounts, 'counts must not be replaced on failure')
+  assert.equal(state.loading, false, 'loading must reset even on failure')
+})
+
+test('load(): a failure never renders a misleading empty/zero replacement -- state is untouched, not reset to [] or {}', async () => {
+  const { state, load } = loadHarness()
+  const existingTests = [{ test_id: 'existing', title: 'Existing Test' }]
+  const existingCounts = { existing: { total: 5, published: 5, draft: 0, other: 0 } }
+  state.tests = existingTests
+  state.counts = existingCounts
+
+  const supabase = makeLoadSupabase({
+    testsResult: { data: null, error: { message: 'boom' } },
+    questionsResult: { data: null, error: null },
+  })
+
+  await load(supabase)
+
+  // Not just "still correct" -- literally the same reference, proving
+  // setTests/setCounts were never called at all, not called with [] / {}.
+  assert.strictEqual(state.tests, existingTests)
+  assert.strictEqual(state.counts, existingCounts)
+})
+
+test('load(): a successful load replaces tests/counts with fresh values, clears any prior error, resets loading', async () => {
+  const { state, load } = loadHarness()
+  state.error = 'stale previous error'
+  state.tests = [{ test_id: 'old', title: 'Old' }]
+  state.counts = { old: { total: 1, published: 1, draft: 0, other: 0 } }
+
+  const freshTests = [{ test_id: 'indian-geography', title: 'Indian Geography' }]
+  const supabase = makeLoadSupabase({
+    testsResult: { data: freshTests, error: null },
+    questionsResult: { data: [{ test_id: 'indian-geography', status: 'published' }], error: null },
+  })
+
+  await load(supabase)
+
+  assert.equal(state.error, '', 'a successful load must clear any prior error')
+  assert.deepEqual(state.tests, freshTests)
+  assert.deepEqual(state.counts, { 'indian-geography': { total: 1, published: 1, draft: 0, other: 0 } })
+  assert.equal(state.loading, false)
+})
+
 // ── Activation ───────────────────────────────────────────────────────────────
 
 test('activation: published=0 blocks update entirely', async () => {
@@ -272,6 +429,24 @@ test('activation: a re-fetch mismatch (is_active still false) is treated as fail
   assert.equal(state.toasts[0][0], 'error')
   assert.equal(state.freshRow, null, 'a verification mismatch must not be reflected in local state')
   assert.equal(state.savingId, null)
+})
+
+test('activation: a re-fetch that returns an error is treated as failure, not success', async () => {
+  const { client, state, setActive } = harness({ refetchResult: { data: null, error: { message: 'refetch failed' } } })
+  const counts = { 'indian-geography': { total: 100, published: 100, draft: 0, other: 0 } }
+  await setActive(testRow, true, counts, client)
+  assert.equal(state.toasts[0][0], 'error')
+  assert.equal(state.freshRow, null, 'a refetch error must not be reflected in local state')
+  assert.equal(state.savingId, null, 'saving state must still reset')
+})
+
+test('activation: a re-fetch that returns no row (null fresh value, e.g. the row vanished) is treated as failure, not success', async () => {
+  const { client, state, setActive } = harness({ refetchResult: { data: null, error: null } })
+  const counts = { 'indian-geography': { total: 100, published: 100, draft: 0, other: 0 } }
+  await setActive(testRow, true, counts, client)
+  assert.equal(state.toasts[0][0], 'error')
+  assert.equal(state.freshRow, null, 'a missing row must not be reflected in local state')
+  assert.equal(state.savingId, null, 'saving state must still reset')
 })
 
 // ── Deactivation ─────────────────────────────────────────────────────────────
