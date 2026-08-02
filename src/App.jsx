@@ -32,6 +32,7 @@ const AdminExams          = lazy(() => import('./pages/admin/AdminExams'))
 const AdminCurrentAffairs = lazy(() => import('./pages/admin/AdminCurrentAffairs'))
 const AdminPapers         = lazy(() => import('./pages/admin/AdminPapers'))
 const AdminQuestions      = lazy(() => import('./pages/admin/AdminQuestions'))
+const AdminMockTests      = lazy(() => import('./pages/admin/AdminMockTests'))
 const AdminDrafts         = lazy(() => import('./pages/admin/AdminDrafts'))
 const AdminAutomation     = lazy(() => import('./pages/admin/AdminAutomation'))
 
@@ -113,6 +114,7 @@ export default function App() {
         <Route path="/admin/current-affairs" element={<AdminRoute><AdminCurrentAffairs /></AdminRoute>} />
         <Route path="/admin/papers"          element={<AdminRoute><AdminPapers /></AdminRoute>} />
         <Route path="/admin/questions"       element={<AdminRoute><AdminQuestions /></AdminRoute>} />
+        <Route path="/admin/mock-tests"      element={<AdminRoute><AdminMockTests /></AdminRoute>} />
         <Route path="/admin/drafts"          element={<AdminRoute><AdminDrafts /></AdminRoute>} />
         <Route path="/admin/automation"      element={<AdminRoute><AdminAutomation /></AdminRoute>} />
 
