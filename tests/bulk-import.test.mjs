@@ -705,7 +705,7 @@ test('normalizeImportRow: no input status lets an Indian Geography row bypass no
   }
 })
 
-test('SUBJECT_TEST_MAP: Indian Geography entry is present and no existing mapping was altered', () => {
+test('SUBJECT_TEST_MAP: Indian Geography and Indian History entries are present and no existing mapping was altered', () => {
   assert.equal(SUBJECT_TEST_MAP['Indian Geography'], 'indian-geography')
   assert.equal(SUBJECT_TEST_MAP['Indian Polity'], 'indian-polity')
   assert.equal(SUBJECT_TEST_MAP['Indian Economy'], 'indian-economy')
@@ -713,5 +713,6 @@ test('SUBJECT_TEST_MAP: Indian Geography entry is present and no existing mappin
   assert.equal(SUBJECT_TEST_MAP['AP History'], 'ap-history')
   assert.equal(SUBJECT_TEST_MAP['AP Geography'], 'ap-geography')
   assert.equal(SUBJECT_TEST_MAP['Current Affairs'], 'current-affairs-apts')
-  assert.equal(Object.keys(SUBJECT_TEST_MAP).length, 7)
+  assert.equal(SUBJECT_TEST_MAP['Indian History'], 'indian-history')
+  assert.equal(Object.keys(SUBJECT_TEST_MAP).length, 8)
 })

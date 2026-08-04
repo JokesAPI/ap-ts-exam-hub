@@ -13,13 +13,12 @@
 // loudly instead of silently near-matching the wrong entry).
 //
 // Only subjects with a real, existing `mock_tests.test_id` row are listed.
-// The remaining canonical subjects (Indian History, TS History, Indian
-// Geography, TS Geography, Arithmetic, Reasoning, English, Computer
-// Awareness, Environment, General Knowledge) intentionally have no entry
-// yet -- their `mock_tests` catalog rows have not been created (deferred,
-// per Phase 8.1 scope). Importing a batch for one of those subjects today
-// will correctly fail with "unknown subject" until its entry is added here
-// AND a matching catalog row exists.
+// The remaining canonical subjects (TS History, TS Geography, Arithmetic,
+// Reasoning, English, Computer Awareness, Environment, General Knowledge)
+// intentionally have no entry yet -- their `mock_tests` catalog rows have
+// not been created (deferred, per Phase 8.1 scope). Importing a batch for
+// one of those subjects today will correctly fail with "unknown subject"
+// until its entry is added here AND a matching catalog row exists.
 export const SUBJECT_TEST_MAP = {
   'Indian Polity': 'indian-polity',
   'Indian Economy': 'indian-economy',
@@ -30,4 +29,5 @@ export const SUBJECT_TEST_MAP = {
   // exactly why this is an explicit lookup table and not a formula.
   'Current Affairs': 'current-affairs-apts',
   'Indian Geography': 'indian-geography',
+  'Indian History': 'indian-history',
 }
