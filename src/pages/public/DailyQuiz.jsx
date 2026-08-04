@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Helmet } from 'react-helmet-async'
 import Layout from '../../components/Layout'
 import { CheckCircle, XCircle, Trophy, RotateCcw, Zap, ChevronRight } from 'lucide-react'
+import { getIstDateKey, getDailyQuestionSelection } from '../../lib/dailyQuizSelection'
 
 // Large question bank — 50+ questions
 const ALL_QUESTIONS = [
@@ -57,18 +58,16 @@ const ALL_QUESTIONS = [
   { q: "Kolleru Lake is located between which two rivers?", options: ["Krishna and Godavari", "Godavari and Pennar", "Krishna and Tungabhadra", "Pennar and Palar"], ans: 0, exp: "Kolleru Lake is between the deltas of Krishna and Godavari rivers in AP." },
 ]
 
+// Daily question selection fix only: the SET and ORDER are now derived
+// deterministically from the India calendar date (Asia/Kolkata) via
+// dailyQuizSelection.js, replacing the previous browser-local-timezone,
+// weakly-seeded shuffle that collapsed to nearly the same 10 questions on
+// ~93% of days. Same day -> same 10 questions in the same order; the set
+// changes at midnight IST. This does NOT add persistence for answers,
+// current position, score, or completion state -- those still reset on
+// reload exactly as before; only the question selection is stable.
 function getDailyQuestions() {
-  // Use today's date as seed to get consistent but different questions each day
-  const today = new Date().toDateString()
-  const seed = today.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
-
-  // Shuffle using seeded random
-  const shuffled = [...ALL_QUESTIONS]
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(((seed * (i + 1)) % 9973) % (i + 1))
-    ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
-  }
-  return shuffled.slice(0, 10)
+  return getDailyQuestionSelection(ALL_QUESTIONS, getIstDateKey())
 }
 
 export default function DailyQuiz() {
