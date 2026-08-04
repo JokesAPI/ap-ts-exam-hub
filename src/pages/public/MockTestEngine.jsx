@@ -6,6 +6,13 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { loadTest, loadOfficialQuestions, resolveAccess } from '../../lib/officialTests'
 import {
+  selectAttemptQuestions,
+  readStoredSelection,
+  writeStoredSelection,
+  clearStoredSelection,
+  validateStoredSelectionPayload,
+} from '../../lib/mockAttemptSelection'
+import {
   Clock, CheckCircle, XCircle, AlertCircle, Trophy,
   RotateCcw, ChevronLeft, ChevronRight, MinusCircle,
   BarChart2, Target, Lock
@@ -106,14 +113,28 @@ export default function MockTestEngine() {
       // 3. Questions come ONLY from Supabase. No hardcoded fallback: if this
       //    throws we show an explicit error rather than serving stale content.
       const pool = await loadOfficialQuestions(supabase, testId)
-      const shuffled = [...pool].sort(() => Math.random() - 0.5)
-      setQuestions(shuffled)
+
+      // Phase 12: sample questions_per_attempt questions instead of always
+      // loading the full pool, and keep that selection stable across a
+      // reload. This does NOT persist answers, current question, or the
+      // timer -- those still reset every load (see mockAttemptSelection.js
+      // for the exact, deliberately partial, scope). A missing, malformed,
+      // or stale stored selection is never fatal -- it's silently discarded
+      // and replaced with a fresh one.
+      const rawStoredSelection = readStoredSelection(testId)
+      const validStoredIds = validateStoredSelectionPayload(
+        rawStoredSelection, testId, pool, test.questions_per_attempt
+      )
+      const selected = selectAttemptQuestions(pool, test.questions_per_attempt, validStoredIds)
+      writeStoredSelection(testId, selected.map(q => q.id))
+
+      setQuestions(selected)
       // Phase 7.5A: duration_minutes is a nullable per-test override. NULL
       // (every existing test today) preserves the exact legacy calculation.
       setTimeLeft(
         test.duration_minutes != null
           ? test.duration_minutes * 60
-          : shuffled.length * TEST_TIME_PER_Q
+          : selected.length * TEST_TIME_PER_Q
       )
       setPhase('test')
       startTime.current = Date.now()
@@ -186,6 +207,11 @@ export default function MockTestEngine() {
     }
     setResult(resultData)
     setPhase('result')
+    // Phase 12: clear only once the result state is irreversible -- not at
+    // the top of submitTest(). If the mock_results save below fails, the UI
+    // still intentionally shows this completed local result, so the stored
+    // selection must not survive into the next load either way.
+    clearStoredSelection(testId)
 
     // ── Fix #7: Properly save mock result with user_id + await + error handling
     if (user?.id) {
@@ -356,8 +382,18 @@ export default function MockTestEngine() {
             </div>
 
             <div className="flex gap-3 justify-center flex-wrap">
-              <button onClick={() => { setAnswers({}); setCurrent(0); submitted.current = false; setPhase('loading'); setTimeout(loadQuestions, 100) }}
-                className="btn-primary"><RotateCcw className="h-4 w-4" /> Retry</button>
+              <button onClick={() => {
+                // Retry always starts a fresh attempt. The selection was
+                // already cleared once in submitTest() above -- clear again
+                // defensively here so Retry is correct even if this screen
+                // is reached any other way in the future.
+                clearStoredSelection(testId)
+                setAnswers({})
+                setCurrent(0)
+                submitted.current = false
+                setPhase('loading')
+                setTimeout(loadQuestions, 100)
+              }} className="btn-primary"><RotateCcw className="h-4 w-4" /> Retry</button>
               <button onClick={() => navigate('/mock-tests')} className="btn-secondary">More Tests</button>
             </div>
           </div>

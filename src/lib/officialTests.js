@@ -50,7 +50,10 @@ export async function loadTest(supabase, testId) {
   const { data, error } = await supabase
     .from('mock_tests')
     // Phase 7.5A: same nullable-override columns as loadTestCatalog() above.
-    .select('test_id, title, access_tier, subject, duration_minutes, negative_mark_per_wrong')
+    // Phase 12: questions_per_attempt is NOT NULL (default 25) -- the client
+    // still normalizes it defensively (mockAttemptSelection.js) rather than
+    // trusting the DB value is never null/invalid.
+    .select('test_id, title, access_tier, subject, duration_minutes, negative_mark_per_wrong, questions_per_attempt')
     .eq('test_id', testId)
     .eq('is_active', true)
     .maybeSingle()
