@@ -30,7 +30,7 @@ export default function AdminLogin() {
       <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md p-8">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-14 h-14 bg-primary-100 dark:bg-primary-900/30 rounded-2xl mb-4">
-            <BookOpen className="h-7 w-7 text-primary-600" />
+            <img src="/ap-ts-exam-hub-logo.png" alt="AP TS Exam Hub" className="h-9 w-9 object-contain" />
           </div>
           <h1 className="text-2xl font-bold">Admin Login</h1>
           <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">AP TS Exam Hub</p>

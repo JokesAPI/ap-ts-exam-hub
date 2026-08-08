@@ -31,7 +31,7 @@ export default function AdminLayout({ children }) {
       <aside className="w-64 bg-primary-900 dark:bg-gray-900 text-white flex flex-col fixed h-full">
         <div className="p-5 border-b border-white/10">
           <Link to="/" className="flex items-center gap-2 font-bold text-lg">
-            <BookOpen className="h-5 w-5 text-blue-300" />
+            <img src="/ap-ts-exam-hub-logo.png" alt="AP TS Exam Hub" className="h-6 w-6 object-contain" />
             AP|TS Exam Hub
           </Link>
           <p className="text-xs text-blue-300 mt-0.5">Admin Panel</p>

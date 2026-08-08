@@ -9,7 +9,7 @@ export default function Footer() {
 
           <div>
             <div className="flex items-center gap-2 font-bold text-lg text-white mb-2">
-              <BookOpen className="h-5 w-5 text-blue-300" />
+              <img src="/ap-ts-exam-hub-logo.png" alt="AP TS Exam Hub" className="h-6 w-6 object-contain" />
               AP | TS Exam Hub
             </div>
             <p className="text-sm text-blue-200 mb-1">Your one-stop portal for AP and Telangana State Exams.</p>

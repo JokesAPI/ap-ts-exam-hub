@@ -36,7 +36,7 @@ export default function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           <Link to="/" className="flex items-center gap-2 font-bold text-lg tracking-tight flex-shrink-0">
-            <BookOpen className="h-6 w-6 text-blue-300" />
+            <img src="/ap-ts-exam-hub-logo.png" alt="AP TS Exam Hub" className="h-10 w-10 sm:h-12 sm:w-12 lg:h-14 lg:w-14 object-contain" />
             <span className="hidden sm:block">AP<span className="text-yellow-300">|</span>TS Exam Hub</span>
             <span className="sm:hidden text-sm">AP|TS Hub</span>
           </Link>
